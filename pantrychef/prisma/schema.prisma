@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Auth.js models
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Billing. Kept on the user rather than a separate table because PantryChef
+  // bills one subscription per account.
+  stripeCustomerId       String?   @unique
+  stripeSubscriptionId   String?   @unique
+  stripePriceId          String?
+  stripeCurrentPeriodEnd DateTime?
+  plan                   Plan      @default(FREE)
+
+  accounts     Account[]
+  sessions     Session[]
+  pantryItems  PantryItem[]
+  savedRecipes SavedRecipe[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------------------------------------------------------------------------
+// PantryChef domain
+// ---------------------------------------------------------------------------
+
+enum Plan {
+  FREE
+  PLUS
+  FAMILY
+}
+
+model PantryItem {
+  id        String    @id @default(cuid())
+  userId    String
+  // Free-text as the user typed it, e.g. "cherry tomatoes".
+  name      String
+  // Normalised singular lowercase key used for recipe matching, e.g. "tomato".
+  slug      String
+  category  String    @default("other")
+  quantity  String?
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, slug])
+  @@index([userId])
+}
+
+model Recipe {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  summary     String
+  imageUrl    String
+  minutes     Int
+  servings    Int
+  difficulty  String   @default("easy")
+  cuisine     String   @default("everyday")
+  steps       String[]
+  // Gated recipes are only returned in full to PLUS/FAMILY subscribers.
+  isPremium   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  ingredients  RecipeIngredient[]
+  savedBy      SavedRecipe[]
+}
+
+model RecipeIngredient {
+  id       String  @id @default(cuid())
+  recipeId String
+  // Matches PantryItem.slug.
+  slug     String
+  label    String
+  amount   String?
+  // Staples (salt, oil, water) are assumed present and never counted as missing.
+  isStaple Boolean @default(false)
+
+  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@index([slug])
+  @@index([recipeId])
+}
+
+model SavedRecipe {
+  id       String   @id @default(cuid())
+  userId   String
+  recipeId String
+  savedAt  DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recipeId])
+}

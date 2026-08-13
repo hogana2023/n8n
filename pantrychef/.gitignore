@@ -1,0 +1,12 @@
+# The repo root ignores *.mdx globally; blog posts live here and must be tracked.
+!*.mdx
+!content/**/*.mdx
+
+node_modules
+.next
+out
+.env
+.env.local
+.env*.local
+next-env.d.ts
+*.tsbuildinfo

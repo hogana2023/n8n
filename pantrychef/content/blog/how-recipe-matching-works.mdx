@@ -1,0 +1,53 @@
+---
+title: "How PantryChef decides what to show you"
+description: "The ranking is deliberately simple, because a suggestion you can't explain is a suggestion you won't trust."
+date: "2026-05-30"
+category: "Product"
+image: "https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=1600&q=80"
+author:
+  name: "Priya Raman"
+  role: "Engineering"
+  avatar: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80"
+---
+
+There's a version of this product that runs everything through a large model and produces a recipe. We built some of it. It was worse, and the reason is instructive.
+
+## The trust problem
+
+When a suggestion appears and you can't tell why, you check it. You read the whole ingredient list to see whether it's lying. That check costs more time than just deciding for yourself, so people stop using the feature.
+
+A suggestion is only useful if you believe it at a glance. That rules out anything you can't explain in one line.
+
+## What we do instead
+
+Every recipe is scored against your pantry with arithmetic you could do yourself:
+
+1. Take the recipe's ingredients and drop the staples. Salt, oil, water and pepper are assumed present, because they always are, and counting them makes everything look 80% complete.
+2. Count how many of the rest you have. That fraction is the coverage score.
+3. Apply a penalty for each missing ingredient past the first.
+
+That third step is the only part that isn't obvious, and it exists because of how shopping actually works. Missing one thing means a two-minute stop on the way home. Missing three means a real shop, which means you won't cook it tonight.
+
+So a recipe missing one ingredient scores near the top, and each additional gap costs it six points. Two recipes with identical coverage rank differently if one of them is closer to cookable.
+
+## Sorting
+
+Once scored, the order is:
+
+- Anything you can cook right now, with nothing missing.
+- Then by score.
+- Then, at equal score, by cooking time.
+
+Cookable-now always leads. It's the reason the product exists, and burying it under a marginally higher-scoring recipe that needs a shop would be a mistake.
+
+## The normalisation problem
+
+The genuinely hard part isn't ranking. It's deciding that "2 ripe Roma tomatoes", "chopped tomatoes", and "passata" are the same thing for matching purposes, while "spring onion" and "onion" are not.
+
+That's a rules problem, not a model problem. We keep a synonym table and a small set of singularisation rules, and we prefer the longest matching phrase so "spring onion" is checked before "onion". It's unglamorous, it's readable, and when it's wrong you can see exactly why.
+
+## What we'd change
+
+The scoring doesn't yet know that you have half a lemon rather than four, and it treats a tablespoon of parmesan the same as 300g of chicken. Quantity awareness is the obvious next step.
+
+It also doesn't know what you like. That one we're in less of a hurry to fix, because a system that quietly stops showing you things is much harder to trust than one that shows you everything and explains its order.

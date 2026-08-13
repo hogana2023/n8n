@@ -1,0 +1,156 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --nav-height: 3.5rem;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+    scroll-padding-top: calc(var(--nav-height) + 1rem);
+  }
+
+  body {
+    @apply bg-surface text-ink font-sans text-regular;
+    font-synthesis-weight: none;
+  }
+
+  /* Relume sections read these; keep them in sync with tailwind.config.js. */
+  section {
+    --scheme-background: theme("colors.surface.DEFAULT");
+    --scheme-text: theme("colors.ink.DEFAULT");
+  }
+
+  ::selection {
+    @apply bg-accent/15 text-ink;
+  }
+
+  /* Apple's focus ring: a soft halo, never a hard outline. */
+  :focus-visible {
+    @apply outline-none ring-4 ring-accent/35 ring-offset-0;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply text-balance;
+  }
+}
+
+@layer components {
+  /* Translucent nav that blurs the page behind it. */
+  .nav-blur {
+    background-color: rgba(255, 255, 255, 0.72);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+  }
+
+  /* The pill buttons Apple uses everywhere. */
+  .btn-pill {
+    @apply inline-flex items-center justify-center rounded-full px-6 py-3 text-regular
+           font-medium transition-all duration-200 ease-apple
+           disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .btn-primary {
+    @apply btn-pill bg-accent text-white hover:bg-accent-hover active:scale-[0.97];
+  }
+
+  .btn-secondary {
+    @apply btn-pill bg-surface-neutral text-ink hover:bg-hairline active:scale-[0.97];
+  }
+
+  .btn-ghost {
+    @apply btn-pill text-accent hover:bg-accent-quiet active:scale-[0.97];
+  }
+
+  .field {
+    @apply w-full rounded-form border border-hairline bg-white px-4 py-3 text-regular
+           text-ink placeholder:text-ink-faint
+           focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/20
+           transition-colors duration-200;
+  }
+
+  .surface-card {
+    @apply rounded-card bg-white shadow-card;
+  }
+
+  .shell {
+    @apply mx-auto w-full max-w-shell px-6 md:px-8;
+  }
+
+  /* Section rhythm — Apple pages breathe hard between blocks. */
+  .band {
+    @apply py-20 md:py-28 lg:py-32;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .text-pretty {
+    text-wrap: pretty;
+  }
+
+  /* Apple's signature dark-to-light headline gradient. */
+  .text-gradient-ink {
+    @apply bg-gradient-to-b from-ink to-ink-soft bg-clip-text text-transparent;
+  }
+}
+
+/* Long-form blog body. Scoped so it never leaks into app screens. */
+.prose-pc {
+  @apply text-medium leading-[1.7] text-ink;
+}
+.prose-pc > * + * {
+  @apply mt-6;
+}
+.prose-pc h2 {
+  @apply mt-14 text-h3 font-semibold tracking-tight text-ink;
+}
+.prose-pc h3 {
+  @apply mt-10 text-h4 font-semibold tracking-tight text-ink;
+}
+.prose-pc p {
+  @apply text-pretty text-ink-soft;
+}
+.prose-pc strong {
+  @apply font-semibold text-ink;
+}
+.prose-pc a {
+  @apply text-accent underline decoration-accent/30 underline-offset-4
+         hover:decoration-accent transition-colors;
+}
+.prose-pc ul {
+  @apply list-disc space-y-2 pl-6 text-ink-soft marker:text-hairline;
+}
+.prose-pc ol {
+  @apply list-decimal space-y-2 pl-6 text-ink-soft marker:text-ink-faint;
+}
+.prose-pc blockquote {
+  @apply border-l-2 border-accent pl-6 text-large italic text-ink;
+}
+.prose-pc img {
+  @apply rounded-image;
+}
+.prose-pc code {
+  @apply rounded bg-surface-muted px-1.5 py-0.5 font-mono text-small text-ink;
+}
+.prose-pc hr {
+  @apply my-12 border-hairline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
