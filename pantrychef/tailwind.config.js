@@ -57,15 +57,18 @@ module.exports = {
           sunken: "#fafafa",
           neutral: "#e8e8ed",
         },
+        // PantryChef's existing brand teal, darkened just enough to clear
+        // 4.5:1 on white — the bright cyan from the live site is used for
+        // accents on dark, where it already has the contrast.
         accent: {
-          DEFAULT: "#0071e3",
-          hover: "#0077ed",
-          quiet: "#e8f1fd",
+          DEFAULT: "#00868b",
+          hover: "#00999f",
+          quiet: "#e2f6f7",
+          bright: "#12d3d9", // on dark surfaces only
         },
-        // PantryChef's own colour: a warm herb green for produce/fresh cues.
         herb: {
-          DEFAULT: "#1d7a4c",
-          soft: "#eaf5ef",
+          DEFAULT: "#00868b",
+          soft: "#e2f6f7",
         },
         hairline: "#d2d2d7",
         // Relume sections read from these; default them to the light scheme.

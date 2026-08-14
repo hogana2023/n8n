@@ -6,77 +6,86 @@ export type PlanDefinition = {
   id: PlanId;
   name: string;
   tagline: string;
-  /** Price in whole currency units, per month. */
   monthly: number;
-  /** Per month, when billed annually. */
   yearly: number;
   features: string[];
-  /** Null means unlimited. */
+  /** Pantry items trackable at once. Null = unlimited. */
   pantryLimit: number | null;
-  premiumRecipes: boolean;
+  /** Recipe generations per day. Null = unlimited. */
+  dailyGenerations: number | null;
+  photoScan: boolean;
+  mealPlans: boolean;
+  petFood: boolean;
   highlighted?: boolean;
 };
 
 export const PLANS: Record<PlanId, PlanDefinition> = {
   FREE: {
     id: "FREE",
-    name: "Taste",
-    tagline: "Everything you need to stop wasting food.",
+    name: "Taster",
+    tagline: "Enough to see whether it changes how you cook.",
     monthly: 0,
     yearly: 0,
-    pantryLimit: 15,
-    premiumRecipes: false,
+    pantryLimit: 20,
+    dailyGenerations: 3,
+    photoScan: false,
+    mealPlans: false,
+    petFood: false,
     features: [
-      "Track up to 15 pantry items",
-      "Unlimited everyday recipe matches",
-      "Expiry reminders",
-      "Save up to 10 recipes",
+      "3 recipe generations a day",
+      "Track up to 20 ingredients",
+      "Leftovers and appliance modes",
+      "Save any recipe you like",
     ],
   },
   PLUS: {
     id: "PLUS",
     name: "Plus",
-    tagline: "For people who actually cook.",
-    monthly: 6,
-    yearly: 4,
+    tagline: "For the person who actually cooks most nights.",
+    monthly: 7,
+    yearly: 5,
     pantryLimit: null,
-    premiumRecipes: true,
+    dailyGenerations: null,
+    photoScan: true,
+    mealPlans: true,
+    petFood: true,
     highlighted: true,
     features: [
-      "Unlimited pantry items",
-      "The full chef-developed recipe library",
-      "Smart weekly meal plans",
-      "Shopping lists that skip what you own",
-      "Nutrition breakdowns",
+      "Unlimited recipe generation",
+      "Photograph your fridge instead of typing it",
+      "Weekly meal plans and shopping lists",
+      "PantryPup pet food recipes",
+      "Unlimited pantry, nutrition on every recipe",
     ],
   },
   FAMILY: {
     id: "FAMILY",
-    name: "Family",
-    tagline: "One kitchen, up to six cooks.",
-    monthly: 10,
-    yearly: 7,
+    name: "Household",
+    tagline: "One kitchen, up to six people, everyone's requirements.",
+    monthly: 12,
+    yearly: 9,
     pantryLimit: null,
-    premiumRecipes: true,
+    dailyGenerations: null,
+    photoScan: true,
+    mealPlans: true,
+    petFood: true,
     features: [
       "Everything in Plus",
       "Up to 6 household members",
-      "A shared pantry that syncs live",
-      "Per-person dietary preferences",
-      "Priority support",
+      "A shared pantry that syncs",
+      "Per-person dietary requirements applied at once",
+      "20% off every cookbook",
     ],
   },
 };
 
 export const PLAN_ORDER: PlanId[] = ["FREE", "PLUS", "FAMILY"];
 
-/** Stripe price ids, resolved from env so the same build works in test and live. */
 export function priceIdFor(plan: PlanId, interval: "month" | "year"): string | undefined {
   const key = `STRIPE_PRICE_${plan}_${interval === "month" ? "MONTHLY" : "YEARLY"}`;
   return process.env[key];
 }
 
-/** Reverse lookup used by the webhook to map a Stripe price back onto a plan. */
 export function planForPriceId(priceId: string | null | undefined): PlanId {
   if (!priceId) return "FREE";
   for (const plan of ["PLUS", "FAMILY"] as const) {
@@ -91,7 +100,19 @@ export function isPaid(plan: Plan | PlanId | undefined | null): boolean {
   return plan === "PLUS" || plan === "FAMILY";
 }
 
+export function planOf(plan: Plan | PlanId | undefined | null): PlanDefinition {
+  return PLANS[(plan as PlanId) ?? "FREE"] ?? PLANS.FREE;
+}
+
 export function pantryLimitFor(plan: Plan | PlanId | undefined | null): number | null {
-  if (plan === "PLUS" || plan === "FAMILY") return null;
-  return PLANS.FREE.pantryLimit;
+  return planOf(plan).pantryLimit;
+}
+
+/** Household plans get a standing discount on one-time cookbook purchases. */
+export function cookbookDiscountFor(plan: Plan | PlanId | undefined | null): number {
+  return plan === "FAMILY" ? 0.2 : 0;
+}
+
+export function formatPence(pence: number): string {
+  return `£${(pence / 100).toFixed(2).replace(/\.00$/, "")}`;
 }

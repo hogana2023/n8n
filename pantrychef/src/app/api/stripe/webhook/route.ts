@@ -90,6 +90,28 @@ export async function POST(request: Request) {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object;
+
+        // One-time cookbook purchase — a different flow from subscriptions.
+        if (session.mode === "payment" && session.metadata?.kind === "cookbook") {
+          const { userId, cookbookId } = session.metadata;
+          if (!userId || !cookbookId) {
+            console.warn("[stripe] cookbook checkout missing metadata", session.id);
+            break;
+          }
+          // Stripe retries webhooks, so this must be idempotent.
+          await prisma.cookbookPurchase.upsert({
+            where: { userId_cookbookId: { userId, cookbookId } },
+            create: {
+              userId,
+              cookbookId,
+              stripeCheckoutSession: session.id,
+              amountPence: session.amount_total ?? 0,
+            },
+            update: {},
+          });
+          break;
+        }
+
         if (session.mode !== "subscription" || !session.subscription) break;
 
         const subscriptionId =

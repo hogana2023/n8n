@@ -1,212 +1,171 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import Link from "next/link";
+import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 
 import { cn } from "@/lib/utils";
 
 /**
- * A real, working slice of the product on the marketing page: toggle what you
- * have, watch the matches re-rank. Runs entirely client-side against a fixed
- * demo set — no account, no request.
+ * A worked example of each generation mode. These are fixed sample outputs,
+ * labelled as such — the real thing runs against your own pantry after signup.
+ * Nothing here is presented as a live result or as customer data.
  */
 
-type DemoRecipe = {
+type Mode = {
+  id: string;
+  label: string;
+  ask: string;
+  input: string[];
   title: string;
-  minutes: number;
-  needs: string[];
-  image: string;
+  meta: string;
+  lines: string[];
 };
 
-const INGREDIENTS = [
-  "eggs",
-  "onion",
-  "garlic",
-  "tomato",
-  "pasta",
-  "rice",
-  "chicken",
-  "spinach",
-  "cheddar",
-  "chickpea",
-  "lemon",
-  "yoghurt",
-] as const;
-
-const DEMO_RECIPES: DemoRecipe[] = [
+const MODES: Mode[] = [
   {
-    title: "Ten-minute tomato & garlic pasta",
-    minutes: 10,
-    needs: ["pasta", "tomato", "garlic"],
-    image: "linear-gradient(135deg,#e8503a,#f0894f)",
+    id: "pantry",
+    label: "Pantry",
+    ask: "What can I make tonight?",
+    input: ["chicken thighs", "spring onions", "rice", "soy sauce", "eggs", "chilli"],
+    title: "Charred spring onion chicken rice",
+    meta: "30 min · serves 2 · everything in stock",
+    lines: [
+      "Salt the thighs and leave them skin-side up while the rice steams.",
+      "Char the spring onions hard in a dry pan until blistered, then set aside.",
+      "Render the thighs skin-side down from cold, 12 minutes, without moving them.",
+      "Fold the charred onion and a spoon of the rendered fat through the rice.",
+    ],
   },
   {
-    title: "Weeknight chicken traybake",
-    minutes: 35,
-    needs: ["chicken", "onion", "lemon", "garlic"],
-    image: "linear-gradient(135deg,#b9762f,#e2a95a)",
+    id: "leftovers",
+    label: "Leftovers",
+    ask: "Half a roast chicken and cold rice.",
+    input: ["roast chicken", "cooked rice", "stock", "lemon"],
+    title: "Chicken and rice soup, avgolemono-style",
+    meta: "20 min · serves 3 · uses it all",
+    lines: [
+      "Strip the carcass and simmer the bones for 15 minutes while you work.",
+      "Temper beaten egg with hot stock off the heat, whisking, or it will scramble.",
+      "Add the cold rice last and only to warm through, not to cook.",
+      "Do not reheat this a second time once the egg is in.",
+    ],
   },
   {
-    title: "Spinach & cheddar folded omelette",
-    minutes: 8,
-    needs: ["eggs", "spinach", "cheddar"],
-    image: "linear-gradient(135deg,#2f7d4f,#7bbd83)",
+    id: "appliance",
+    label: "Air fryer",
+    ask: "Something in the air fryer.",
+    input: ["potatoes", "paprika", "chicken thighs", "lemon"],
+    title: "Paprika thighs with crushed potatoes",
+    meta: "35 min · serves 2 · air fryer",
+    lines: [
+      "Parboil the potatoes 8 minutes, drain, and crush them flat under a mug.",
+      "Basket at 200°C. Potatoes first, 12 minutes, shaking twice.",
+      "Push them to one side, thighs skin-up alongside, 18 minutes more.",
+      "Don't stack — anything overlapping steams instead of crisping.",
+    ],
   },
   {
-    title: "Chickpea & yoghurt bowl",
-    minutes: 15,
-    needs: ["chickpea", "yoghurt", "lemon", "spinach"],
-    image: "linear-gradient(135deg,#3f6f9c,#79a7cd)",
-  },
-  {
-    title: "Egg fried rice",
-    minutes: 12,
-    needs: ["rice", "eggs", "onion", "garlic"],
-    image: "linear-gradient(135deg,#8a6d3b,#c9a86a)",
+    id: "pup",
+    label: "PantryPup",
+    ask: "Food for a 12kg dog.",
+    input: ["turkey mince", "carrot", "pumpkin", "rice", "sunflower oil"],
+    title: "Turkey, pumpkin and rice batch",
+    meta: "45 min · 6 daily portions · 12kg dog",
+    lines: [
+      "No onion, garlic, or allium of any kind goes into this. Not for flavour, not at all.",
+      "Brown the turkey plain, then simmer with the diced carrot and pumpkin.",
+      "Fold the cooked rice through and cool fully before portioning into six.",
+      "This is a topper unless your vet has signed off a supplement plan.",
+    ],
   },
 ];
 
-const INITIAL = new Set<string>(["eggs", "onion", "garlic", "tomato", "pasta"]);
-
 export function HeroDemo() {
-  const [selected, setSelected] = useState<Set<string>>(INITIAL);
-
-  const toggle = (item: string) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(item)) next.delete(item);
-      else next.add(item);
-      return next;
-    });
-
-  const ranked = useMemo(() => {
-    return DEMO_RECIPES.map((recipe) => {
-      const missing = recipe.needs.filter((n) => !selected.has(n));
-      const coverage = (recipe.needs.length - missing.length) / recipe.needs.length;
-      return { recipe, missing, coverage };
-    })
-      .filter((m) => m.coverage > 0)
-      .sort((a, b) => {
-        if (a.missing.length !== b.missing.length) return a.missing.length - b.missing.length;
-        if (b.coverage !== a.coverage) return b.coverage - a.coverage;
-        return a.recipe.minutes - b.recipe.minutes;
-      })
-      .slice(0, 3);
-  }, [selected]);
-
-  const cookNow = ranked.filter((m) => m.missing.length === 0).length;
+  const [active, setActive] = useState(MODES[0]);
 
   return (
-    <div className="mx-auto max-w-5xl overflow-hidden rounded-[1.75rem] bg-white shadow-lifted ring-1 ring-hairline/60">
-      {/* Window chrome, macOS style. */}
-      <div className="flex items-center gap-2 border-b border-hairline/60 bg-surface-muted/70 px-5 py-3.5">
-        <span className="size-3 rounded-full bg-[#ff5f57]" />
-        <span className="size-3 rounded-full bg-[#febc2e]" />
-        <span className="size-3 rounded-full bg-[#28c840]" />
-        <p className="ml-3 text-tiny font-medium text-ink-faint">Tonight</p>
+    <div className="overflow-hidden rounded-[1.75rem] bg-white shadow-lifted ring-1 ring-hairline/70">
+      {/* Mode switcher */}
+      <div className="flex gap-1 overflow-x-auto border-b border-hairline bg-surface-muted/60 p-2">
+        {MODES.map((mode) => (
+          <button
+            key={mode.id}
+            type="button"
+            onClick={() => setActive(mode)}
+            aria-pressed={active.id === mode.id}
+            className={cn(
+              "shrink-0 rounded-full px-4 py-2 text-small font-medium transition-all duration-200 ease-apple",
+              active.id === mode.id
+                ? "bg-white text-ink shadow-sm"
+                : "text-ink-soft hover:text-ink",
+            )}
+          >
+            {mode.label}
+          </button>
+        ))}
       </div>
 
-      <div className="grid gap-0 md:grid-cols-[1fr_1.15fr]">
-        {/* Pantry side */}
-        <div className="border-b border-hairline/60 p-6 md:border-b-0 md:border-r md:p-8">
-          <div className="flex items-baseline justify-between">
-            <h3 className="text-h6 font-semibold tracking-tight text-ink">In my kitchen</h3>
-            <span className="text-tiny tabular-nums text-ink-faint">
-              {selected.size} item{selected.size === 1 ? "" : "s"}
-            </span>
-          </div>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={active.id}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.28, ease: [0.28, 0.11, 0.32, 1] }}
+          className="grid md:grid-cols-[0.85fr_1.15fr]"
+        >
+          {/* What you give it */}
+          <div className="border-b border-hairline p-7 md:border-b-0 md:border-r md:p-9">
+            <p className="text-tiny font-medium uppercase tracking-wide text-ink-faint">
+              You say
+            </p>
+            <p className="mt-3 text-h6 font-semibold tracking-tight text-ink">
+              {active.ask}
+            </p>
 
-          <p className="mt-1 text-small text-ink-faint">Tap to add or remove.</p>
-
-          <div className="mt-5 flex flex-wrap gap-2">
-            {INGREDIENTS.map((item) => {
-              const on = selected.has(item);
-              return (
-                <button
+            <p className="mt-7 text-tiny font-medium uppercase tracking-wide text-ink-faint">
+              You have
+            </p>
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {active.input.map((item) => (
+                <li
                   key={item}
-                  type="button"
-                  onClick={() => toggle(item)}
-                  aria-pressed={on}
-                  className={cn(
-                    "rounded-full px-3.5 py-2 text-small capitalize transition-all duration-200 ease-apple active:scale-95",
-                    on
-                      ? "bg-herb text-white shadow-sm"
-                      : "bg-surface-muted text-ink-soft hover:bg-surface-neutral",
-                  )}
+                  className="rounded-full bg-surface-muted px-3 py-1.5 text-small text-ink-soft"
                 >
                   {item}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Results side */}
-        <div className="bg-surface-sunken p-6 md:p-8">
-          <div className="flex items-baseline justify-between">
-            <h3 className="text-h6 font-semibold tracking-tight text-ink">
-              You can cook
-            </h3>
-            <span className="text-tiny tabular-nums text-herb">
-              {cookNow} ready now
-            </span>
-          </div>
-
-          <ul className="mt-5 space-y-3">
-            <AnimatePresence mode="popLayout" initial={false}>
-              {ranked.map(({ recipe, missing }) => (
-                <motion.li
-                  key={recipe.title}
-                  layout
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.32, ease: [0.28, 0.11, 0.32, 1] }}
-                  className="flex items-center gap-4 rounded-2xl bg-white p-3.5 shadow-card"
-                >
-                  <span
-                    aria-hidden
-                    className="size-12 shrink-0 rounded-xl"
-                    style={{ backgroundImage: recipe.image }}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-small font-semibold text-ink">
-                      {recipe.title}
-                    </p>
-                    <p className="mt-0.5 text-tiny text-ink-faint">
-                      {recipe.minutes} min
-                      {missing.length === 0 ? (
-                        <span className="text-herb"> · everything in stock</span>
-                      ) : (
-                        <span> · add {missing.join(", ")}</span>
-                      )}
-                    </p>
-                  </div>
-                  {missing.length === 0 && (
-                    <span className="shrink-0 rounded-full bg-herb-soft px-2.5 py-1 text-tiny font-medium text-herb">
-                      Cook
-                    </span>
-                  )}
-                </motion.li>
+                </li>
               ))}
-            </AnimatePresence>
-          </ul>
+            </ul>
+          </div>
 
-          {ranked.length === 0 && (
-            <p className="mt-6 text-small text-ink-faint">
-              Add an ingredient to see what you can make.
+          {/* What comes back */}
+          <div className="bg-surface-sunken p-7 md:p-9">
+            <p className="text-tiny font-medium uppercase tracking-wide text-ink-faint">
+              It writes
             </p>
-          )}
+            <h3 className="mt-3 text-h5 font-semibold tracking-tight text-ink">
+              {active.title}
+            </h3>
+            <p className="mt-1.5 text-small text-herb">{active.meta}</p>
 
-          <Link
-            href="/signup"
-            className="mt-6 inline-block text-small font-medium text-accent hover:underline underline-offset-4"
-          >
-            Do this with your real kitchen ›
-          </Link>
-        </div>
-      </div>
+            <ol className="mt-6 space-y-3.5">
+              {active.lines.map((line, i) => (
+                <li key={i} className="flex gap-3.5">
+                  <span className="mt-[0.15rem] grid size-5 shrink-0 place-items-center rounded-full bg-ink text-[10px] font-semibold text-white">
+                    {i + 1}
+                  </span>
+                  <span className="text-small text-pretty text-ink-soft">{line}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </motion.div>
+      </AnimatePresence>
+
+      <p className="border-t border-hairline bg-white px-7 py-3.5 text-tiny text-ink-faint md:px-9">
+        Worked examples, not live output. Yours are generated against your own
+        pantry and requirements.
+      </p>
     </div>
   );
 }

@@ -8,7 +8,7 @@ datasource db {
 }
 
 // ---------------------------------------------------------------------------
-// Auth.js models
+// Auth.js
 // ---------------------------------------------------------------------------
 
 model User {
@@ -21,18 +21,24 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  // Billing. Kept on the user rather than a separate table because PantryChef
-  // bills one subscription per account.
   stripeCustomerId       String?   @unique
   stripeSubscriptionId   String?   @unique
   stripePriceId          String?
   stripeCurrentPeriodEnd DateTime?
   plan                   Plan      @default(FREE)
 
-  accounts     Account[]
-  sessions     Session[]
-  pantryItems  PantryItem[]
-  savedRecipes SavedRecipe[]
+  // Preferences that condition every generation.
+  cuisines     String[] @default([])
+  dietary      String[] @default([])
+  dislikes     String[] @default([])
+  appliances   String[] @default([])
+
+  accounts    Account[]
+  sessions    Session[]
+  pantryItems PantryItem[]
+  recipes     Recipe[]
+  mealPlans   MealPlan[]
+  purchases   CookbookPurchase[]
 }
 
 model Account {
@@ -71,7 +77,7 @@ model VerificationToken {
 }
 
 // ---------------------------------------------------------------------------
-// PantryChef domain
+// PantryChef
 // ---------------------------------------------------------------------------
 
 enum Plan {
@@ -80,16 +86,25 @@ enum Plan {
   FAMILY
 }
 
+/// What the recipe was generated from. Drives which generator prompt runs and
+/// which cookbook a recipe is filed into.
+enum RecipeKind {
+  PANTRY // from the full pantry
+  LEFTOVERS // from cooked food that needs using up
+  APPLIANCE // targeted at one appliance
+  PET // PantryPup
+}
+
 model PantryItem {
   id        String    @id @default(cuid())
   userId    String
-  // Free-text as the user typed it, e.g. "cherry tomatoes".
   name      String
-  // Normalised singular lowercase key used for recipe matching, e.g. "tomato".
   slug      String
   category  String    @default("other")
   quantity  String?
   expiresAt DateTime?
+  /// True when the item came from a photo rather than being typed.
+  fromPhoto Boolean   @default(false)
   createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -99,48 +114,115 @@ model PantryItem {
 }
 
 model Recipe {
+  id String @id @default(cuid())
+  /// Null for curated recipes that belong to a cookbook rather than a person.
+  userId String?
+  kind   RecipeKind @default(PANTRY)
+
+  title       String
+  summary     String
+  minutes     Int
+  servings    Int
+  difficulty  String @default("easy")
+  cuisine     String @default("everyday")
+  /// "air-fryer", "instant-pot", "slow-cooker", "oven", "hob" — null for any.
+  appliance   String?
+
+  ingredients Json // [{ item, amount, have }]
+  steps       String[]
+  tips        String[] @default([])
+  nutrition   Json? // { calories, protein, carbs, fat } — per serving
+
+  /// Dietary tags the generator asserted this recipe satisfies.
+  dietary     String[] @default([])
+
+  /// The model that produced it, for provenance when a recipe reads oddly.
+  model       String   @default("claude-opus-5")
+  saved       Boolean  @default(false)
+  cooked      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user    User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries CookbookEntry[]
+
+  @@index([userId, kind])
+  @@index([userId, saved])
+}
+
+model MealPlan {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  days      Int      @default(7)
+  /// [{ day, meals: [{ slot, title, recipeId? }] }]
+  plan      Json
+  /// Aggregated shopping list minus what the pantry already covers.
+  shopping  Json
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// A purchasable collection. Recipes are filed in automatically by category;
+/// an editor curates which collections go on sale.
+model Cookbook {
   id          String   @id @default(cuid())
   slug        String   @unique
   title       String
-  summary     String
-  imageUrl    String
-  minutes     Int
-  servings    Int
-  difficulty  String   @default("easy")
-  cuisine     String   @default("everyday")
-  steps       String[]
-  // Gated recipes are only returned in full to PLUS/FAMILY subscribers.
-  isPremium   Boolean  @default(false)
+  subtitle    String
+  description String
+  coverColor  String   @default("#1d7a4c")
+  /// One-time price in pence.
+  pricePence  Int      @default(900)
+  /// The Stripe price id for the one-time purchase.
+  stripePriceId String?
+  category    String
+  published   Boolean  @default(false)
   createdAt   DateTime @default(now())
 
-  ingredients  RecipeIngredient[]
-  savedBy      SavedRecipe[]
+  entries   CookbookEntry[]
+  purchases CookbookPurchase[]
 }
 
-model RecipeIngredient {
-  id       String  @id @default(cuid())
-  recipeId String
-  // Matches PantryItem.slug.
-  slug     String
-  label    String
-  amount   String?
-  // Staples (salt, oil, water) are assumed present and never counted as missing.
-  isStaple Boolean @default(false)
+model CookbookEntry {
+  id         String @id @default(cuid())
+  cookbookId String
+  recipeId   String
+  position   Int    @default(0)
 
-  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  cookbook Cookbook @relation(fields: [cookbookId], references: [id], onDelete: Cascade)
+  recipe   Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
 
-  @@index([slug])
-  @@index([recipeId])
+  @@unique([cookbookId, recipeId])
+  @@index([cookbookId])
 }
 
-model SavedRecipe {
-  id       String   @id @default(cuid())
-  userId   String
-  recipeId String
-  savedAt  DateTime @default(now())
+model CookbookPurchase {
+  id                    String   @id @default(cuid())
+  userId                String
+  cookbookId            String
+  stripeCheckoutSession String   @unique
+  amountPence           Int
+  purchasedAt           DateTime @default(now())
 
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cookbook Cookbook @relation(fields: [cookbookId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, recipeId])
+  @@unique([userId, cookbookId])
+  @@index([userId])
+}
+
+/// Per-user, per-day generation counter. The free plan gets a small daily
+/// allowance; this is what enforces it without a cron job to reset anything.
+model GenerationLog {
+  id        String   @id @default(cuid())
+  userId    String
+  kind      String
+  day       String // YYYY-MM-DD in UTC
+  count     Int      @default(1)
+
+  @@unique([userId, kind, day])
+  @@index([userId, day])
 }

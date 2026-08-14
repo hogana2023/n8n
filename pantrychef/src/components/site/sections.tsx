@@ -3,14 +3,12 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
-/* Shared building blocks                                                     */
-/* -------------------------------------------------------------------------- */
 
 export function SectionHeading({
   eyebrow,
   title,
   body,
-  align = "center",
+  align = "left",
   className,
 }: {
   eyebrow?: string;
@@ -20,407 +18,260 @@ export function SectionHeading({
   className?: string;
 }) {
   return (
-    <div
-      className={cn(
-        "max-w-3xl",
-        align === "center" && "mx-auto text-center",
-        className,
-      )}
-    >
-      {eyebrow && (
-        <p className="text-medium font-medium text-herb">{eyebrow}</p>
-      )}
+    <div className={cn("max-w-2xl", align === "center" && "mx-auto text-center", className)}>
+      {eyebrow && <p className="text-small font-medium text-herb">{eyebrow}</p>}
       <h2 className="mt-3 text-[2rem] font-semibold leading-[1.1] tracking-[-0.022em] text-ink md:text-h2">
         {title}
       </h2>
-      {body && (
-        <p className="mt-5 text-large text-pretty text-ink-soft">{body}</p>
-      )}
+      {body && <p className="mt-5 text-large text-pretty text-ink-soft">{body}</p>}
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* How it works                                                               */
+/* What it does — the modes, which are the actual product                     */
 /* -------------------------------------------------------------------------- */
 
-const STEPS = [
+const MODES = [
   {
-    n: "01",
-    title: "Stock your pantry once",
-    body: "Type what you have, or scan a receipt. PantryChef understands 'a couple of ripe tomatoes' the same way it understands 'tomato'.",
+    name: "From your pantry",
+    body: "List what you have. Get recipes built around it, in your cuisines, inside your dietary requirements.",
+    glyph: "▦",
   },
   {
-    n: "02",
-    title: "See what's cookable tonight",
-    body: "Every recipe is ranked by how much of it you already own. The ones needing nothing extra sit at the top.",
+    name: "From a photo",
+    body: "Point your phone at an open fridge. It reads what's there and fills the pantry for you.",
+    glyph: "◉",
   },
   {
-    n: "03",
-    title: "Cook, and the pantry updates",
-    body: "Mark a meal cooked and the ingredients come off your shelf. Tomorrow's suggestions already know.",
+    name: "From leftovers",
+    body: "Half a roast chicken and cold rice is a different problem from raw ingredients. It's treated as one.",
+    glyph: "↻",
+  },
+  {
+    name: "For your appliance",
+    body: "Air fryer, Instant Pot, slow cooker. Real settings and timings, not an oven recipe with a new name.",
+    glyph: "◎",
+  },
+  {
+    name: "For your dog or cat",
+    body: "PantryPup writes pet food that costs less than the pouches. Toxic ingredients are hard-blocked.",
+    glyph: "✦",
+  },
+  {
+    name: "Into cookbooks",
+    body: "Recipes file themselves into collections by category. The good ones become books you can buy.",
+    glyph: "❐",
   },
 ];
 
-export function HowItWorks() {
+export function Modes() {
   return (
-    <section id="how" className="band bg-surface-muted">
+    <section id="features" className="band bg-surface-muted">
       <div className="shell">
         <SectionHeading
-          eyebrow="How it works"
-          title="Three steps. Then it just runs."
-          body="No meal planning spreadsheet. No 40-minute Sunday ritual. You tell it what you have once, and it keeps up from there."
+          eyebrow="Six ways in"
+          title="Most recipe apps start with a recipe. This one starts with your kitchen."
+          body="Same engine underneath, six different ways of asking. Every one of them respects the allergies and dislikes you set once."
         />
 
-        <ol className="mt-16 grid gap-6 md:grid-cols-3">
-          {STEPS.map((step) => (
-            <li
-              key={step.n}
-              className="rounded-card bg-white p-8 shadow-card transition-transform duration-300 ease-apple hover:-translate-y-1"
-            >
-              <span className="text-small font-semibold tabular-nums text-herb">
-                {step.n}
+        <ul className="mt-16 grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
+          {MODES.map((mode) => (
+            <li key={mode.name}>
+              <span
+                aria-hidden
+                className="grid size-11 place-items-center rounded-2xl bg-white text-large text-herb shadow-card"
+              >
+                {mode.glyph}
               </span>
-              <h3 className="mt-4 text-h5 font-semibold tracking-tight text-ink">
-                {step.title}
-              </h3>
-              <p className="mt-3 text-regular text-pretty text-ink-soft">{step.body}</p>
+              <h3 className="mt-5 text-h6 font-semibold tracking-tight text-ink">{mode.name}</h3>
+              <p className="mt-2 text-regular text-pretty text-ink-soft">{mode.body}</p>
             </li>
           ))}
-        </ol>
+        </ul>
       </div>
     </section>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* Feature bands — alternating, full-bleed, Apple product-page rhythm         */
+/* The photo flow — one deep section, because it's the striking one           */
 /* -------------------------------------------------------------------------- */
 
-function FeatureBand({
-  eyebrow,
-  title,
-  body,
-  bullets,
-  visual,
-  flip = false,
-  tone = "light",
-}: {
-  eyebrow: string;
-  title: string;
-  body: string;
-  bullets?: string[];
-  visual: React.ReactNode;
-  flip?: boolean;
-  tone?: "light" | "dark";
-}) {
+export function PhotoFlow() {
+  const steps = [
+    { n: "1", text: "Open the fridge and take one photo." },
+    { n: "2", text: "It reads the shelves and lists what it can see." },
+    { n: "3", text: "Anything it's unsure about it asks about rather than guessing." },
+    { n: "4", text: "Your pantry is filled in. Dinner follows from there." },
+  ];
+
   return (
-    <section
-      className={cn(
-        "band",
-        tone === "dark" ? "bg-ink text-white" : "bg-white text-ink",
-      )}
-    >
-      <div className="shell grid items-center gap-12 lg:grid-cols-2 lg:gap-20">
-        <div className={cn(flip && "lg:order-2")}>
-          <p
-            className={cn(
-              "text-medium font-medium",
-              tone === "dark" ? "text-herb-soft" : "text-herb",
-            )}
-          >
-            {eyebrow}
-          </p>
-          <h2
-            className={cn(
-              "mt-3 text-[1.9rem] font-semibold leading-[1.12] tracking-[-0.02em] md:text-h3",
-              tone === "dark" ? "text-white" : "text-ink",
-            )}
-          >
-            {title}
+    <section className="band bg-ink">
+      <div className="shell grid items-center gap-14 lg:grid-cols-2 lg:gap-20">
+        <div>
+          <p className="text-small font-medium text-herb-soft">Photograph it</p>
+          <h2 className="mt-3 text-[1.9rem] font-semibold leading-[1.12] tracking-[-0.02em] text-white md:text-h3">
+            Typing out your fridge is the reason nobody does this.
           </h2>
-          <p
-            className={cn(
-              "mt-5 text-large text-pretty",
-              tone === "dark" ? "text-white/70" : "text-ink-soft",
-            )}
-          >
-            {body}
+          <p className="mt-5 text-large text-pretty text-white/70">
+            So don't. One photo of an open fridge and PantryChef reads the shelves.
+            It won't pretend to know what's inside an unlabelled container, and
+            it flags what it isn't sure about instead of quietly adding it.
           </p>
 
-          {bullets && (
-            <ul className="mt-8 space-y-4">
-              {bullets.map((bullet) => (
-                <li key={bullet} className="flex gap-3">
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "mt-[0.45rem] size-1.5 shrink-0 rounded-full",
-                      tone === "dark" ? "bg-herb-soft" : "bg-herb",
-                    )}
-                  />
-                  <span
-                    className={cn(
-                      "text-regular",
-                      tone === "dark" ? "text-white/75" : "text-ink-soft",
-                    )}
-                  >
-                    {bullet}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <ol className="mt-10 space-y-5">
+            {steps.map((step) => (
+              <li key={step.n} className="flex gap-4">
+                <span className="grid size-7 shrink-0 place-items-center rounded-full border border-white/25 text-tiny font-semibold text-white/80">
+                  {step.n}
+                </span>
+                <span className="text-regular text-white/75">{step.text}</span>
+              </li>
+            ))}
+          </ol>
         </div>
 
-        <div className={cn(flip && "lg:order-1")}>{visual}</div>
+        {/* A representation of the scan result, not a screenshot. */}
+        <div className="rounded-card bg-white/[0.06] p-7 ring-1 ring-white/10">
+          <div className="flex items-center justify-between">
+            <p className="text-small font-medium text-white/60">Read from your photo</p>
+            <span className="rounded-full bg-herb/20 px-2.5 py-1 text-tiny text-herb-soft">
+              14 items
+            </span>
+          </div>
+
+          <div className="mt-6 flex flex-wrap gap-2">
+            {["eggs", "spring onions", "cheddar", "chicken thighs", "spinach", "double cream", "tortillas", "chestnut mushrooms"].map(
+              (item) => (
+                <span
+                  key={item}
+                  className="rounded-full bg-white/10 px-3 py-1.5 text-small text-white/85"
+                >
+                  {item}
+                </span>
+              ),
+            )}
+          </div>
+
+          <div className="mt-7 rounded-2xl bg-white/[0.05] p-4">
+            <p className="text-tiny font-medium uppercase tracking-wide text-white/40">
+              Not sure about
+            </p>
+            <p className="mt-2 text-small text-white/70">
+              A tub on the middle shelf, and something wrapped in foil. Tap to tell it what they are.
+            </p>
+          </div>
+
+          <p className="mt-6 text-tiny text-white/35">
+            Illustrative of the scan output. Photo scanning is on Plus.
+          </p>
+        </div>
       </div>
     </section>
   );
 }
 
-/* --- Visuals: CSS-drawn so the page ships no marketing screenshots -------- */
+/* -------------------------------------------------------------------------- */
+/* PantryPup                                                                  */
+/* -------------------------------------------------------------------------- */
 
-function WasteVisual() {
-  const bars = [
-    { label: "Before", value: 100, tone: "bg-hairline" },
-    { label: "Month 1", value: 64, tone: "bg-herb/50" },
-    { label: "Month 3", value: 31, tone: "bg-herb" },
-  ];
+export function PantryPup() {
   return (
-    <div className="rounded-card bg-surface-muted p-8 shadow-card">
-      <p className="text-small font-medium text-ink-soft">Food thrown away</p>
-      <div className="mt-8 space-y-6">
-        {bars.map((bar) => (
-          <div key={bar.label}>
-            <div className="flex items-baseline justify-between">
-              <span className="text-small text-ink-soft">{bar.label}</span>
-              <span className="text-small font-semibold tabular-nums text-ink">
-                {bar.value}%
-              </span>
-            </div>
-            <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-white">
-              <div
-                className={cn("h-full rounded-full", bar.tone)}
-                style={{ width: `${bar.value}%` }}
-              />
-            </div>
+    <section className="band bg-white">
+      <div className="shell grid items-center gap-14 lg:grid-cols-2 lg:gap-20">
+        <div className="order-2 lg:order-1">
+          <div className="rounded-card bg-herb-soft p-8">
+            <p className="text-small font-medium text-herb">Hard-blocked, every time</p>
+            <ul className="mt-5 flex flex-wrap gap-2">
+              {["onion", "garlic", "grapes", "raisins", "chocolate", "xylitol", "macadamia", "cooked bones"].map(
+                (item) => (
+                  <li
+                    key={item}
+                    className="rounded-full bg-white px-3 py-1.5 text-small text-ink line-through decoration-[#b3261e]/50 decoration-2"
+                  >
+                    {item}
+                  </li>
+                ),
+              )}
+            </ul>
+            <p className="mt-6 text-small text-pretty text-ink-soft">
+              Cats are treated as obligate carnivores regardless of what's asked
+              for. Every recipe says plainly that home-cooked food needs
+              supplementation, and to check the balance with your vet before it
+              becomes a staple rather than a topper.
+            </p>
           </div>
-        ))}
-      </div>
-      <p className="mt-8 text-tiny text-ink-faint">
-        Averages across households tracking 20+ items for 90 days.
-      </p>
-    </div>
-  );
-}
+        </div>
 
-function ExpiryVisual() {
-  const items = [
-    { name: "Spinach", days: 1, tone: "text-[#d1453b]" },
-    { name: "Chicken thighs", days: 2, tone: "text-[#c77700]" },
-    { name: "Greek yoghurt", days: 5, tone: "text-ink-soft" },
-    { name: "Cheddar", days: 12, tone: "text-ink-faint" },
-  ];
-  return (
-    <div className="rounded-card bg-white/5 p-8 ring-1 ring-white/10">
-      <p className="text-small font-medium text-white/60">Use these first</p>
-      <ul className="mt-6 divide-y divide-white/10">
-        {items.map((item) => (
-          <li key={item.name} className="flex items-center justify-between py-4">
-            <span className="text-regular text-white">{item.name}</span>
-            <span className={cn("text-small tabular-nums", item.tone)}>
-              {item.days} day{item.days === 1 ? "" : "s"}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function ListVisual() {
-  const rows = [
-    { name: "Double cream", state: "buy" },
-    { name: "Onions", state: "have" },
-    { name: "Smoked paprika", state: "have" },
-    { name: "Chicken stock", state: "buy" },
-    { name: "Garlic", state: "have" },
-  ];
-  return (
-    <div className="rounded-card bg-surface-muted p-8 shadow-card">
-      <div className="flex items-baseline justify-between">
-        <p className="text-small font-medium text-ink-soft">Shopping list</p>
-        <p className="text-tiny text-herb">3 already in your pantry</p>
-      </div>
-      <ul className="mt-6 space-y-2.5">
-        {rows.map((row) => (
-          <li
-            key={row.name}
-            className="flex items-center gap-3 rounded-xl bg-white px-4 py-3"
+        <div className="order-1 lg:order-2">
+          <p className="text-small font-medium text-herb">PantryPup</p>
+          <h2 className="mt-3 text-[1.9rem] font-semibold leading-[1.12] tracking-[-0.02em] text-ink md:text-h3">
+            Better food for your dog, at pouch prices.
+          </h2>
+          <p className="mt-5 text-large text-pretty text-ink-soft">
+            Tell it the species and the weight. It writes batch recipes from
+            ordinary supermarket ingredients, with portions by body weight.
+          </p>
+          <p className="mt-5 text-regular text-pretty text-ink-soft">
+            The part that matters is what it refuses to do. Pet nutrition is
+            where a confident-sounding mistake actually hurts something, so the
+            toxic list is enforced as a rule rather than left to the model's
+            judgement.
+          </p>
+          <Link
+            href="/signup"
+            className="mt-8 inline-block text-regular font-medium text-accent hover:underline underline-offset-4"
           >
-            <span
-              aria-hidden
-              className={cn(
-                "grid size-5 shrink-0 place-items-center rounded-md text-[11px] font-bold text-white",
-                row.state === "have" ? "bg-herb" : "bg-hairline",
-              )}
-            >
-              {row.state === "have" ? "✓" : ""}
-            </span>
-            <span
-              className={cn(
-                "text-regular",
-                row.state === "have"
-                  ? "text-ink-faint line-through decoration-hairline"
-                  : "text-ink",
-              )}
-            >
-              {row.name}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-export function Features() {
-  return (
-    <div id="features">
-      <FeatureBand
-        eyebrow="Waste less"
-        title="The average household bins £700 of food a year."
-        body="PantryChef's whole job is to make that number smaller. It knows what you bought, what's near its date, and what those things add up to."
-        bullets={[
-          "Expiry tracking that nudges before, not after",
-          "Recipes weighted toward what's about to turn",
-          "A weekly summary of what you actually saved",
-        ]}
-        visual={<WasteVisual />}
-      />
-
-      <FeatureBand
-        eyebrow="Never guess again"
-        title="It tells you what to use tonight."
-        body="Open the app and the first thing you see is the ingredient closest to its date, and the three meals that would use it up."
-        bullets={[
-          "Sorted by urgency, not alphabet",
-          "One tap to see what it turns into",
-          "Silence the ones you don't care about",
-        ]}
-        visual={<ExpiryVisual />}
-        flip
-        tone="dark"
-      />
-
-      <FeatureBand
-        eyebrow="Shop for the gap"
-        title="A list of what you're missing. Nothing else."
-        body="Pick a week of meals and PantryChef subtracts your pantry from the ingredients. What's left is the list, and it is always shorter than you expect."
-        bullets={[
-          "Auto-ticks what you already own",
-          "Groups by aisle, not by recipe",
-          "Shares to anyone in the household",
-        ]}
-        visual={<ListVisual />}
-      />
-    </div>
+            Try it on your dog&nbsp;›
+          </Link>
+        </div>
+      </div>
+    </section>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* Stats                                                                      */
+/* Cookbooks                                                                  */
 /* -------------------------------------------------------------------------- */
 
-export function Stats() {
-  const stats = [
-    { value: "1,400+", label: "chef-tested recipes" },
-    { value: "31%", label: "less food binned, on average" },
-    { value: "4 min", label: "median time to decide dinner" },
-    { value: "£58", label: "saved per month, typical household" },
+export function Cookbooks() {
+  const books = [
+    { title: "Air Fryer Weeknights", n: "40 recipes", color: "#1d7a4c" },
+    { title: "One Pot, Six People", n: "36 recipes", color: "#2f5d8a" },
+    { title: "The Leftovers Book", n: "48 recipes", color: "#8a4a2f" },
   ];
 
   return (
     <section className="band bg-surface-muted">
       <div className="shell">
-        <SectionHeading
-          eyebrow="The difference"
-          title="Small change in habit. Large change in bin."
-        />
-        <dl className="mt-14 grid grid-cols-2 gap-8 md:grid-cols-4 md:gap-6">
-          {stats.map((stat) => (
-            <div key={stat.label} className="text-center">
-              <dt className="sr-only">{stat.label}</dt>
-              <dd>
-                <span className="block text-[2.25rem] font-semibold tracking-[-0.02em] text-ink md:text-h3">
-                  {stat.value}
-                </span>
-                <span className="mt-2 block text-small text-pretty text-ink-soft">
-                  {stat.label}
-                </span>
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-    </section>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Testimonials                                                               */
-/* -------------------------------------------------------------------------- */
-
-const QUOTES = [
-  {
-    quote:
-      "I stopped doing a big shop. I now buy four things on a Tuesday and the app tells me that's a week of dinners.",
-    name: "Priya Raman",
-    role: "Household of four, Leeds",
-  },
-  {
-    quote:
-      "The expiry list is the whole product for me. I haven't thrown out a bag of spinach since March.",
-    name: "Tom Okafor",
-    role: "Cooks for one, Bristol",
-  },
-  {
-    quote:
-      "It's the only recipe app that starts from my kitchen instead of somebody else's shopping list.",
-    name: "Elena Vasquez",
-    role: "Household of two, Glasgow",
-  },
-];
-
-export function Testimonials() {
-  return (
-    <section className="band bg-white">
-      <div className="shell">
-        <SectionHeading
-          eyebrow="From the kitchen"
-          title="People stopped planning and started cooking."
-        />
-        <div className="mt-14 grid gap-6 md:grid-cols-3">
-          {QUOTES.map((item) => (
-            <figure
-              key={item.name}
-              className="flex flex-col rounded-card bg-surface-muted p-8"
-            >
-              <blockquote className="flex-1 text-medium text-pretty text-ink">
-                “{item.quote}”
-              </blockquote>
-              <figcaption className="mt-6 border-t border-hairline pt-5">
-                <span className="block text-small font-semibold text-ink">
-                  {item.name}
-                </span>
-                <span className="mt-0.5 block text-small text-ink-faint">
-                  {item.role}
-                </span>
-              </figcaption>
-            </figure>
-          ))}
+        <div className="flex flex-wrap items-end justify-between gap-6">
+          <SectionHeading
+            eyebrow="Cookbooks"
+            title="The good ones become books."
+            body="Recipes file themselves into collections by category as they're generated. Curated ones go on sale as one-off purchases — no subscription needed to buy one."
+          />
         </div>
+
+        <ul className="mt-14 grid gap-8 sm:grid-cols-3">
+          {books.map((book) => (
+            <li key={book.title}>
+              <div
+                className="flex aspect-[3/4] flex-col justify-end rounded-image p-6 shadow-card"
+                style={{ backgroundColor: book.color }}
+              >
+                <h3 className="text-h5 font-semibold leading-tight tracking-tight text-white">
+                  {book.title}
+                </h3>
+                <p className="mt-2 text-small text-white/70">{book.n}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        <p className="mt-8 text-small text-ink-faint">
+          Covers shown are placeholders for the collections in the app.
+        </p>
       </div>
     </section>
   );
@@ -432,25 +283,24 @@ export function Testimonials() {
 
 export function ClosingCta() {
   return (
-    <section className="band bg-ink">
-      <div className="shell text-center">
-        <h2 className="mx-auto max-w-3xl text-[2rem] font-semibold leading-[1.1] tracking-[-0.022em] text-white md:text-h2">
-          Open your fridge. We'll take it from there.
-        </h2>
-        <p className="mx-auto mt-5 max-w-xl text-large text-pretty text-white/70">
-          Free for your first 15 ingredients, forever. Upgrade only when your
-          pantry outgrows it.
-        </p>
-        <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <Link href="/signup" className="btn-primary w-full sm:w-auto">
-            Start free
-          </Link>
-          <Link
-            href="/pricing"
-            className="btn-pill w-full border border-white/25 text-white hover:bg-white/10 sm:w-auto"
-          >
-            Compare plans
-          </Link>
+    <section className="band bg-white">
+      <div className="shell">
+        <div className="mx-auto max-w-3xl text-center">
+          <h2 className="text-[2rem] font-semibold leading-[1.1] tracking-[-0.022em] text-ink md:text-h2">
+            Open the fridge. We'll take it from there.
+          </h2>
+          <p className="mx-auto mt-5 max-w-xl text-large text-pretty text-ink-soft">
+            Three recipes a day, free, no card. Upgrade when you find yourself
+            using it every night.
+          </p>
+          <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <Link href="/signup" className="btn-primary w-full sm:w-auto">
+              Start free
+            </Link>
+            <Link href="/pricing" className="btn-secondary w-full sm:w-auto">
+              See pricing
+            </Link>
+          </div>
         </div>
       </div>
     </section>

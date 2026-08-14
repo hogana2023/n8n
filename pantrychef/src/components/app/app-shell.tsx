@@ -11,9 +11,11 @@ import { Logo } from "@/components/site/logo";
 import { PLANS } from "@/lib/plans";
 
 const NAV = [
-  { href: "/app", label: "Tonight", exact: true },
+  { href: "/app", label: "Kitchen", exact: true },
   { href: "/app/pantry", label: "Pantry" },
   { href: "/app/recipes", label: "Recipes" },
+  { href: "/app/cookbooks", label: "Cookbooks" },
+  { href: "/app/preferences", label: "Preferences" },
   { href: "/app/billing", label: "Billing" },
 ];
 

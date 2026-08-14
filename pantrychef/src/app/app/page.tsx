@@ -4,133 +4,112 @@ import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { matchRecipesForUser, shoppingSuggestions } from "@/lib/recipes";
-import { RecipeCard } from "@/components/app/recipe-card";
-import type { PlanId } from "@/lib/plans";
+import { checkQuota } from "@/lib/quota";
+import { planOf, type PlanId } from "@/lib/plans";
+import { Generator } from "@/components/app/generator";
+import { aiConfigured } from "@/lib/ai";
 
-export const metadata: Metadata = { title: "Tonight" };
+export const metadata: Metadata = { title: "Kitchen" };
 export const dynamic = "force-dynamic";
 
-function daysUntil(date: Date): number {
-  return Math.ceil((date.getTime() - Date.now()) / 86_400_000);
-}
-
-export default async function TonightPage() {
+export default async function KitchenPage() {
   const session = await getServerSession(authOptions);
   const userId = session!.user.id;
   const plan = session!.user.plan as PlanId;
 
-  const [matches, expiring, pantryCount] = await Promise.all([
-    matchRecipesForUser(userId, plan, { limit: 6 }),
+  const [pantryCount, quota, expiring, recent] = await Promise.all([
+    prisma.pantryItem.count({ where: { userId } }),
+    checkQuota(userId, plan),
     prisma.pantryItem.findMany({
       where: { userId, expiresAt: { not: null } },
       orderBy: { expiresAt: "asc" },
-      take: 5,
+      take: 4,
     }),
-    prisma.pantryItem.count({ where: { userId } }),
+    prisma.recipe.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 3,
+      select: { id: true, title: true, minutes: true, kind: true },
+    }),
   ]);
-
-  const cookNow = matches.filter((m) => m.cookNow);
-  const suggestions = shoppingSuggestions(matches);
 
   return (
     <div className="mx-auto max-w-5xl">
-      <header>
+      <header className="mb-8">
         <h1 className="text-h3 font-semibold tracking-tight text-ink">
-          {cookNow.length > 0
-            ? `${cookNow.length} meal${cookNow.length === 1 ? "" : "s"} you can cook right now`
-            : "Let's find you dinner"}
+          What are we cooking?
         </h1>
         <p className="mt-2 text-regular text-ink-soft">
           {pantryCount === 0
-            ? "Add a few things to your pantry and suggestions appear here."
-            : `Matched against ${pantryCount} ingredient${pantryCount === 1 ? "" : "s"} in your kitchen.`}
+            ? "Add a few ingredients and it'll write you something."
+            : `Working from ${pantryCount} ingredient${pantryCount === 1 ? "" : "s"} in your pantry.`}
         </p>
       </header>
 
-      {pantryCount === 0 && (
-        <div className="mt-10 rounded-card bg-white p-10 text-center shadow-card">
-          <h2 className="text-h5 font-semibold tracking-tight text-ink">
-            Your pantry is empty
-          </h2>
-          <p className="mx-auto mt-3 max-w-md text-regular text-pretty text-ink-soft">
-            Start with the ten things you actually cook with. You can add the
-            rest whenever you unpack a shop.
-          </p>
-          <Link href="/app/pantry" className="btn-primary mt-8">
-            Add ingredients
-          </Link>
-        </div>
+      {!aiConfigured() && (
+        <p className="mb-6 rounded-form bg-[#fff4e5] px-4 py-3 text-small text-[#8a5a00]">
+          <code className="font-mono">ANTHROPIC_API_KEY</code> isn't set on this
+          deployment, so generation is disabled. See the README.
+        </p>
       )}
 
-      {/* Use-me-first rail */}
       {expiring.length > 0 && (
-        <section className="mt-10">
-          <h2 className="text-h6 font-semibold tracking-tight text-ink">Use these first</h2>
-          <ul className="mt-4 flex flex-wrap gap-2">
+        <div className="mb-8 rounded-card bg-white p-5 shadow-card">
+          <p className="text-small font-medium text-ink">Use these first</p>
+          <ul className="mt-3 flex flex-wrap gap-2">
             {expiring.map((item) => {
-              const days = daysUntil(item.expiresAt!);
-              const urgent = days <= 2;
+              const days = Math.ceil(
+                (item.expiresAt!.getTime() - Date.now()) / 86_400_000,
+              );
               return (
                 <li
                   key={item.id}
                   className={
-                    urgent
-                      ? "rounded-full bg-[#fdeceb] px-4 py-2 text-small text-[#b3261e]"
-                      : "rounded-full bg-white px-4 py-2 text-small text-ink-soft shadow-sm"
+                    days <= 2
+                      ? "rounded-full bg-[#fdeceb] px-3.5 py-1.5 text-small text-[#b3261e]"
+                      : "rounded-full bg-surface-muted px-3.5 py-1.5 text-small text-ink-soft"
                   }
                 >
                   {item.name}
                   <span className="ml-2 tabular-nums opacity-70">
-                    {days < 0 ? "past date" : days === 0 ? "today" : `${days}d`}
+                    {days < 0 ? "past" : days === 0 ? "today" : `${days}d`}
                   </span>
                 </li>
               );
             })}
           </ul>
-        </section>
+        </div>
       )}
 
-      {matches.length > 0 && (
-        <section className="mt-12">
+      <Generator
+        pantryCount={pantryCount}
+        quota={{ used: quota.used, limit: quota.limit, remaining: quota.remaining }}
+        canPet={planOf(plan).petFood}
+      />
+
+      {recent.length > 0 && (
+        <section className="mt-14">
           <div className="flex items-baseline justify-between">
-            <h2 className="text-h6 font-semibold tracking-tight text-ink">
-              Best matches
-            </h2>
+            <h2 className="text-h6 font-semibold tracking-tight text-ink">Recently written</h2>
             <Link
               href="/app/recipes"
               className="text-small font-medium text-accent hover:underline"
             >
-              See all ›
+              All recipes ›
             </Link>
           </div>
-
-          <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {matches.map((match) => (
-              <RecipeCard key={match.recipe.id} match={match} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {suggestions.length > 0 && (
-        <section className="mt-12 rounded-card bg-white p-8 shadow-card">
-          <h2 className="text-h6 font-semibold tracking-tight text-ink">
-            Buy one thing, unlock more
-          </h2>
-          <p className="mt-2 text-small text-ink-soft">
-            Each of these completes at least one recipe you're close to.
-          </p>
-          <ul className="mt-5 flex flex-wrap gap-2">
-            {suggestions.map((item) => (
-              <li
-                key={item.slug}
-                className="rounded-full bg-herb-soft px-4 py-2 text-small text-herb"
-              >
-                {item.label}
-                <span className="ml-2 tabular-nums opacity-70">
-                  +{item.unlocks}
-                </span>
+          <ul className="mt-4 divide-y divide-hairline overflow-hidden rounded-card bg-white shadow-card">
+            {recent.map((recipe) => (
+              <li key={recipe.id}>
+                <Link
+                  href={`/app/recipes/${recipe.id}`}
+                  className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-surface-muted"
+                >
+                  <span className="text-regular text-ink">{recipe.title}</span>
+                  <span className="shrink-0 text-tiny text-ink-faint">
+                    {recipe.minutes} min
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>
