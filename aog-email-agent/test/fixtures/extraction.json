@@ -1,0 +1,81 @@
+{
+  "$comment": "Suite 2. Cases that say 'Input: CLS-xx' in the spec pull the email from routing.json via inputFrom, so the two suites can never drift apart. EXT-05's due date is written as a resolver rather than a literal because the spec says '(upcoming Friday, resolved)' and hardcoding a date would stop testing the resolution.",
+  "referenceDate": "2026-01-15T09:00",
+  "cases": [
+    {
+      "id": "EXT-01",
+      "inputFrom": "CLS-01",
+      "expect": {
+        "due_date": "2026-02-14T14:00",
+        "project_name": "New Elementary",
+        "client_name": { "$contains": "Example ISD" },
+        "project_stage": "proposal requested",
+        "requested_items": ["bid"],
+        "response_needed": true
+      }
+    },
+    {
+      "id": "EXT-02",
+      "email": {
+        "from": "purchasing@county-example.gov",
+        "subject": "RFQ Bridge Approach Geotech",
+        "body": "See attached RFQ for all dates and requirements.",
+        "receivedAt": "2026-01-15T09:00",
+        "attachments": ["RFQ Bridge Approach Geotech.pdf"]
+      },
+      "expect": {
+        "due_date": null,
+        "date_in_attachment": true,
+        "response_needed": true
+      }
+    },
+    {
+      "id": "EXT-03",
+      "inputFrom": "CLS-01",
+      "expect": {
+        "primary_due_date": "2026-02-14T14:00",
+        "other_dates": [{ "label": { "$contains": "pre-bid" }, "date": "2026-02-03" }]
+      }
+    },
+    {
+      "id": "EXT-04",
+      "inputFrom": "CLS-04",
+      "expect": {
+        "due_date": null,
+        "project_name": "Oakmont Logistics",
+        "project_stage": "active project",
+        "response_needed": true
+      }
+    },
+    {
+      "id": "EXT-05",
+      "email": {
+        "from": "subcontracts@gc-example.com",
+        "subject": "Prequal package, Parkside",
+        "body": "Send COI, three references, current prequalification form, and your fee schedule by Friday.",
+        "receivedAt": "2026-01-15T09:00"
+      },
+      "expect": {
+        "requested_items": {
+          "$setContains": [
+            "certificate of insurance",
+            "references",
+            "prequalification form",
+            "fee schedule"
+          ]
+        },
+        "due_date": { "$nextWeekday": "friday" },
+        "response_needed": true
+      }
+    },
+    {
+      "id": "EXT-06",
+      "inputFrom": "CLS-05",
+      "expect": {
+        "intro_opportunity": true,
+        "intro_target": { "$contains": "developer" },
+        "response_needed": true
+      }
+    }
+  ]
+}

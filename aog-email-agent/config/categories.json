@@ -1,0 +1,78 @@
+{
+  "$comment": "The nine routing bins. Order matters: `precedence` is the tie-break ladder the classifier prompt is built from, lowest number wins. `folder` is the Outlook display name the router moves the message into. `unclassified` is the fallback branch on the Text Classifier node (fallback = 'other'), not an explicit category, so the model can never be forced to pick it by elimination.",
+  "categories": [
+    {
+      "key": "new_opportunity",
+      "category": "New Opportunity",
+      "folder": "AOG/01 New Opportunity",
+      "precedence": 3,
+      "solicitation": true,
+      "description": "A solicitation AOG has not seen before: ITB, RFP, RFQ, RFI, invitation to bid, request for proposal or qualifications, or an owner, GC, architect or civil engineer asking AOG to price, propose or quote geotechnical work. This is the first arrival of that solicitation. Signals: a bid or proposal number appearing for the first time, sealed bids due, plans and specs attached, pre-bid meeting announced, responses due by a date."
+    },
+    {
+      "key": "opportunity_update",
+      "category": "Opportunity Update",
+      "folder": "AOG/02 Opportunity Update",
+      "precedence": 2,
+      "solicitation": true,
+      "description": "New information on a solicitation AOG already has. Addenda, revisions, clarifications, extended or moved bid dates, added or removed scope, pre-bid minutes, answers to bidder questions. Use this even when the body reads like a brand new request, as long as it ties to an existing bid, ITB, RFP or project number, or is labeled addendum, revision, amendment or supplement."
+    },
+    {
+      "key": "bid_outcome",
+      "category": "Bid Outcome",
+      "folder": "AOG/03 Bid Outcome",
+      "precedence": 1,
+      "solicitation": true,
+      "description": "The result of a bid or proposal that has already been submitted. Notice of award, notice of intent to award, selection, non-selection, rejection, apparent low bidder announcement, bid tabulation or tab sheet, pricing recap of all bidders, or cancellation of a solicitation after bids were opened. Use this even when the same message also asks for a signed agreement, bonds, insurance or other paperwork, because the outcome is the thing that matters."
+    },
+    {
+      "key": "active_project",
+      "category": "Active Project",
+      "folder": "AOG/04 Active Project",
+      "precedence": 4,
+      "solicitation": false,
+      "description": "Coordination on work already awarded or underway, sent by someone outside AOG. Crew scheduling and mobilization, site access, drilling and boring logistics, lab results, deliverables and report timing, submittals, change requests, field problems, invoicing on a live job."
+    },
+    {
+      "key": "client_network",
+      "category": "Client & Network",
+      "folder": "AOG/05 Client & Network",
+      "precedence": 7,
+      "solicitation": false,
+      "description": "Relationship and business development with no live solicitation and no active job attached. Personal notes, catching up, coffee, conference follow-ups, congratulations, and warm introductions or referrals where someone offers to connect AOG to a prospect or client. Written by a person to a person, not a mailing list."
+    },
+    {
+      "key": "internal_team",
+      "category": "Internal / Team",
+      "folder": "AOG/06 Internal - Team",
+      "precedence": 6,
+      "solicitation": false,
+      "description": "Mail from an Alpha Omega Geotech address about running the business: crew and rig scheduling, lab turnaround, equipment, timesheets, internal admin and internal questions. Internal senders land here even when the subject touches a live job, unless the message is itself an outside solicitation, addendum or award being forwarded in."
+    },
+    {
+      "key": "compliance_docs",
+      "category": "Compliance & Docs",
+      "folder": "AOG/07 Compliance & Docs",
+      "precedence": 5,
+      "solicitation": false,
+      "description": "Requests for paperwork and qualification material. Certificate of insurance, W-9, prequalification or vendor registration forms, references, licenses, safety or EMR records, fee schedules requested as part of a prequal package, contract and subcontract documents routed for signature, lien waivers, certified payroll. Use this only when the paperwork request is the point of the message and no bid result is being announced."
+    },
+    {
+      "key": "low_priority_noise",
+      "category": "Low Priority / Noise",
+      "folder": "AOG/08 Low Priority - Noise",
+      "precedence": 8,
+      "solicitation": false,
+      "description": "Bulk and promotional mail with nothing for AOG to act on. Vendor sales and discount blasts, product announcements, firm newsletters, event and webinar marketing, industry digests, automated no-reply notifications, social network noise. Judge the content, not the sender: a marketing blast from a key client still belongs here. Never use this bin for a message that carries a solicitation, an addendum, a bid result or a document request."
+    },
+    {
+      "key": "unclassified",
+      "category": "Unclassified",
+      "folder": "AOG/09 Unclassified",
+      "precedence": 9,
+      "solicitation": false,
+      "fallback": true,
+      "description": "Nothing in the message places it in another bin with confidence. Too vague, no subject, no discernible ask, truncated or corrupted content, or a language the pipeline cannot read. Reaching this bin is a normal outcome, not a failure, and it is always better than a confident wrong bin. Messages here are never deleted and always surface for a human glance."
+    }
+  ]
+}

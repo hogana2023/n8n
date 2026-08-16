@@ -1,0 +1,1072 @@
+{
+  "name": "AOG Email Agent, Inbound Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "event": "messageReceived",
+        "output": "raw",
+        "filters": {
+          "readStatus": "unread"
+        },
+        "options": {}
+      },
+      "id": "aog-001",
+      "name": "Inbox Trigger",
+      "type": "n8n-nodes-base.microsoftOutlookTrigger",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        300
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Microsoft Outlook account"
+        }
+      },
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Turning a mail item into the single block of text the classifier and extractor read.\n *\n * The n8n workflow builds the same string in a Set node so the prompt sees byte-identical\n * input in production and in the harness. If these two drift, the fixture scores stop\n * meaning anything, so keep them in step.\n */\n\nconst clean = (s) => String(s ?? '').replace(/\\r\\n/g, '\\n').trim();\n\n/** Strip quoted history so a long reply chain does not drown the live message. */\nfunction stripQuoted(body) {\n\tconst text = clean(body);\n\tconst markers = [\n\t\t/\\n-{2,}\\s*Original Message\\s*-{2,}/i,\n\t\t/\\nOn .{0,120}\\bwrote:\\s*\\n/,\n\t\t/\\n_{10,}\\n/,\n\t\t/\\nFrom:\\s.+\\nSent:\\s/i,\n\t];\n\tlet cut = text.length;\n\tfor (const marker of markers) {\n\t\tconst hit = text.match(marker);\n\t\tif (hit?.index !== undefined && hit.index < cut) cut = hit.index;\n\t}\n\treturn text.slice(0, cut).trim();\n}\n\n/**\n * @param {object} email {from, to, subject, body, receivedAt, attachments?}\n * @param {object} [opts]\n * @param {boolean} [opts.withReferenceDate] extractor needs it, classifier does not\n * @returns {string}\n */\nfunction renderEmail(email, opts = {}) {\n\tconst lines = [];\n\n\tif (opts.withReferenceDate && email.receivedAt) {\n\t\tlines.push(`REFERENCE DATE: ${clean(email.receivedAt)}`, '');\n\t}\n\n\tlines.push(`From: ${clean(email.from)}`);\n\tif (email.to) lines.push(`To: ${clean(email.to)}`);\n\tlines.push(`Subject: ${clean(email.subject) || '(no subject)'}`);\n\n\tconst attachments = email.attachments ?? [];\n\tif (attachments.length) {\n\t\tlines.push(`Attachments: ${attachments.map((a) => (typeof a === 'string' ? a : a.name)).join(', ')}`);\n\t}\n\n\tlines.push('', stripQuoted(email.body));\n\n\treturn lines.join('\\n').trim();\n}\n\n/**\n * Threads classify on the whole conversation, oldest first, so the opening request stays\n * visible. CLS-13 fails if only the last message is shown, because the last message is\n * \"sounds good, talk soon\".\n */\nfunction renderThread(thread, opts = {}) {\n\tconst messages = thread.messages ?? [];\n\tconst lines = [];\n\n\tif (opts.withReferenceDate && (thread.receivedAt ?? messages.at(-1)?.receivedAt)) {\n\t\tlines.push(`REFERENCE DATE: ${clean(thread.receivedAt ?? messages.at(-1).receivedAt)}`, '');\n\t}\n\n\tif (thread.subject) lines.push(`Subject: ${clean(thread.subject)}`, '');\n\n\tlines.push(`THREAD, ${messages.length} message(s), oldest first:`, '');\n\n\tmessages.forEach((message, index) => {\n\t\tlines.push(`--- message ${index + 1} of ${messages.length} ---`);\n\t\tlines.push(`From: ${clean(message.from)}`);\n\t\tif (message.receivedAt) lines.push(`Date: ${clean(message.receivedAt)}`);\n\t\tif (message.subject) lines.push(`Subject: ${clean(message.subject)}`);\n\t\tlines.push('', stripQuoted(message.body), '');\n\t});\n\n\treturn lines.join('\\n').trim();\n}\n\n/** One entry point, so callers do not have to branch on shape. */\nfunction renderInput(fixtureInput, opts = {}) {\n\treturn fixtureInput.messages ? renderThread(fixtureInput, opts) : renderEmail(fixtureInput, opts);\n}\n\nfunction senderOf(fixtureInput) {\n\tif (fixtureInput.from) return fixtureInput.from;\n\tconst messages = fixtureInput.messages ?? [];\n\treturn messages[0]?.from ?? '';\n}\n\n// One text rendering, shared by the classifier and the extractor, and byte-identical to\n// what the fixture harness feeds them. If these drift, the measured scores stop applying.\nconst out = [];\n\nfor (const item of $input.all()) {\n  const m = item.json;\n\n  const email = {\n    from: m.from?.emailAddress?.address ?? m.sender?.emailAddress?.address ?? '',\n    fromName: m.from?.emailAddress?.name ?? '',\n    to: (m.toRecipients ?? []).map((r) => r.emailAddress?.address).filter(Boolean).join(', '),\n    subject: m.subject ?? '',\n    body: m.body?.content ?? m.bodyPreview ?? '',\n    receivedAt: (m.receivedDateTime ?? new Date().toISOString()).slice(0, 16),\n    attachments: (m.attachments ?? []).map((a) => a.name).filter(Boolean),\n  };\n\n  // HTML bodies arrive as markup. The prompt wants prose.\n  if ((m.body?.contentType ?? '').toLowerCase() === 'html') {\n    email.body = email.body\n      .replace(/<br\\s*\\/?>/gi, '\\n')\n      .replace(/<\\/p>/gi, '\\n\\n')\n      .replace(/<[^>]+>/g, '')\n      .replace(/&nbsp;/g, ' ')\n      .replace(/&amp;/g, '&')\n      .replace(/&lt;/g, '<')\n      .replace(/&gt;/g, '>');\n  }\n\n  out.push({\n    json: {\n      messageId: m.id,\n      internetMessageId: m.internetMessageId ?? m.id,\n      conversationId: m.conversationId ?? null,\n      email,\n      classifierText: renderEmail(email),\n      extractorText: renderEmail(email, { withReferenceDate: true }),\n    },\n  });\n}\n\nreturn out;"
+      },
+      "id": "aog-002",
+      "name": "Normalize Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const settings = {\n \"$comment\": \"Operational knobs. Anything the spec called a placeholder is marked PLACEHOLDER and needs a real value from Alex before go-live.\",\n \"mailbox\": {\n  \"address\": \"PLACEHOLDER_MAILBOX_ADDRESS\",\n  \"owner\": \"Alex\",\n  \"signOff\": \"Alex\",\n  \"company\": \"Alpha Omega Geotech\",\n  \"companyShort\": \"AOG\",\n  \"timezone\": \"America/Chicago\"\n },\n \"llm\": {\n  \"provider\": \"anthropic\",\n  \"classifierModel\": \"claude-sonnet-5\",\n  \"extractorModel\": \"claude-sonnet-5\",\n  \"summaryModel\": \"claude-sonnet-5\",\n  \"draftModel\": \"claude-opus-5\",\n  \"temperature\": 0,\n  \"maxTokens\": 2048,\n  \"$comment\": \"Temperature 0 on classifier and extractor per the spec's drift note. Draft generation is the one place a hair of variation is fine, but it runs at 0 too so the three-pass fixture check stays honest.\"\n },\n \"staleFollowUp\": {\n  \"thresholdDays\": 5,\n  \"$comment_thresholdDays\": \"PLACEHOLDER. Spec STL-01/02 assume 5. Confirm the real number with Alex.\",\n  \"businessDaysOnly\": false,\n  \"$comment_businessDaysOnly\": \"OPEN QUESTION. Left off so STL-01 counts days the way the spec writes them (day 0 to day 6 is 6). Turn it on and a Friday send would not surface until the following Friday, which is probably what a person actually wants. Alex decides.\",\n  \"onlyTiers\": [\n   \"internal\",\n   \"key_client\",\n   \"client\",\n   \"prospect\"\n  ],\n  \"ignoreCategories\": [\n   \"Low Priority / Noise\",\n   \"Unclassified\"\n  ],\n  \"threadAware\": true,\n  \"$comment_threadAware\": \"STL-03: any inbound on the same conversation counts as an answer, no matter who sent it.\"\n },\n \"learning\": {\n  \"startWeight\": 0.5,\n  \"minWeight\": 0,\n  \"maxWeight\": 1,\n  \"deleteUnreadDelta\": -0.06,\n  \"deleteReadDelta\": -0.03,\n  \"archiveUnreadDelta\": -0.02,\n  \"fastReplyDelta\": 0.08,\n  \"fastReplyMinutes\": 15,\n  \"openedNoReplyDelta\": 0.01,\n  \"singleActionCap\": 0.02,\n  \"$comment_singleActionCap\": \"LRN-03 overfitting guard. Any sender sitting on a tier with a weight floor gets its per-action movement clamped to this, and can never be pushed below the floor. One delete cannot knock a key client down.\",\n  \"dampenedTiers\": [\n   \"internal\",\n   \"key_client\"\n  ],\n  \"minActionsBeforeTierChange\": 8\n },\n \"dailySummary\": {\n  \"sendAt\": \"07:00\",\n  \"windowHours\": 24,\n  \"sections\": [\n   \"New Opportunities\",\n   \"Critical Deadlines\",\n   \"High-Priority Comms\",\n   \"Outstanding Follow-ups\",\n   \"Awaiting Decision\"\n  ],\n  \"emptySectionText\": \"None.\",\n  \"criticalDeadlineHorizonDays\": 60,\n  \"$comment_criticalDeadlineHorizonDays\": \"SUMX-02 sets the floor on this. CLS-01 arrives 2026-01-15 with a 2026-02-14 bid date, 30 days out, and the spec requires that date under Critical Deadlines the same day. So the horizon has to clear a normal bid cycle. It exists only to keep an absurd far-future date out of the brief.\"\n },\n \"integration\": {\n  \"approvalGate\": \"required\",\n  \"$comment_approvalGate\": \"INT-03 red line. 'required' means every outbound write to Pipedrive, SharePoint or the R: drive is queued as a pending intent and logged as a dry run. Nothing hits a live system until a human clears it. Do not set this to 'off'.\",\n  \"dryRunLog\": \"logs/intended-writes.jsonl\",\n  \"dedupeKey\": \"internetMessageId\",\n  \"targets\": {\n   \"pipedrive\": {\n    \"enabled\": false,\n    \"reason\": \"awaiting API token\"\n   },\n   \"sharepoint\": {\n    \"enabled\": false,\n    \"reason\": \"awaiting site + drive id\"\n   },\n   \"rdrive\": {\n    \"enabled\": false,\n    \"reason\": \"awaiting UNC path\"\n   }\n  }\n },\n \"drafts\": {\n  \"createFor\": [\n   \"New Opportunity\",\n   \"Opportunity Update\",\n   \"Active Project\",\n   \"Compliance & Docs\",\n   \"Client & Network\"\n  ],\n  \"neverCreateFor\": [\n   \"Low Priority / Noise\",\n   \"Unclassified\",\n   \"Bid Outcome\"\n  ],\n  \"$comment_neverCreateFor\": \"Bid Outcome is off the auto-draft list on purpose. An award or a loss is a message Alex answers himself.\",\n  \"saveAsDraftOnly\": true,\n  \"maxWords\": 150\n }\n};\nconst contacts = {\n \"$comment\": \"Priority tier lookup. This table is the ONLY thing allowed to set priority_tier. The classifier and extractor never see it and never emit a tier field. Suite 3 red line: 'Any priority tier set by the LLM instead of the contacts lookup' is a ship blocker, so tier() is pure data lookup with no model in the path. Addresses below are the spec placeholders; swap them for the real AOG contact list before go-live and the fixtures still run.\",\n \"$comment_weights\": \"startWeight is where a sender begins on the learning loop. weightFloor is how far the loop is allowed to push it down, ever. The gap between the two is the room a tier has to move, which is why key_client has room to drift a little but can never fall through the floor into vendor territory.\",\n \"tiers\": {\n  \"internal\": {\n   \"rank\": 0,\n   \"startWeight\": 0.9,\n   \"weightFloor\": 0.8,\n   \"label\": \"Alpha Omega Geotech staff\"\n  },\n  \"key_client\": {\n   \"rank\": 1,\n   \"startWeight\": 0.8,\n   \"weightFloor\": 0.7,\n   \"label\": \"Named key client or key GC\"\n  },\n  \"client\": {\n   \"rank\": 2,\n   \"startWeight\": 0.65,\n   \"weightFloor\": 0.5,\n   \"label\": \"Active or past client\"\n  },\n  \"prospect\": {\n   \"rank\": 3,\n   \"startWeight\": 0.5,\n   \"weightFloor\": 0.4,\n   \"label\": \"Known prospect, no work yet\"\n  },\n  \"vendor\": {\n   \"rank\": 4,\n   \"startWeight\": 0.3,\n   \"weightFloor\": 0.2,\n   \"label\": \"Supplier or service vendor\"\n  },\n  \"unknown\": {\n   \"rank\": 5,\n   \"startWeight\": 0.5,\n   \"weightFloor\": 0.3,\n   \"label\": \"Not in the contacts table\"\n  }\n },\n \"defaultTier\": \"unknown\",\n \"byAddress\": {\n  \"pm@gc-example.com\": \"key_client\",\n  \"estimator@gc-example.com\": \"key_client\",\n  \"subcontracts@gc-example.com\": \"key_client\",\n  \"garic@alphaomega-example.com\": \"internal\",\n  \"principal@arch-example.com\": \"key_client\",\n  \"news@arch-example.com\": \"key_client\",\n  \"purchasing@example-isd.org\": \"client\",\n  \"contracts@city-example.gov\": \"client\",\n  \"purchasing@city-example.gov\": \"client\",\n  \"purchasing@county-example.gov\": \"prospect\",\n  \"civil@example-eng.com\": \"client\",\n  \"developer@example-dev.com\": \"prospect\",\n  \"news@drillrig-vendor.com\": \"vendor\"\n },\n \"byDomain\": {\n  \"alphaomega-example.com\": \"internal\",\n  \"aogeotech.com\": \"internal\"\n }\n};\n\n/**\n * Priority tier lookup.\n *\n * Spec red line: \"Any priority tier set by the LLM instead of the contacts lookup\" is a\n * ship blocker. So there is no model anywhere in this file and there never should be.\n * Address match wins over domain match, and a miss returns the default tier with\n * tier_source 'default' so the caller can tell a real lookup from a fallback.\n *\n * Suite 3 cases: PRI-01 address hit, PRI-02 miss, PRI-03 internal hit, PRI-04 the split\n * where content routed the message to Noise but the tier stays whatever the table says.\n */\n\nconst normalize = (address) => String(address ?? '').trim().toLowerCase();\n\n/** Pulls the address out of \"Name <addr@host>\" or a bare address. */\nfunction parseAddress(input) {\n\tconst raw = normalize(input);\n\tconst angled = raw.match(/<([^>]+)>/);\n\treturn angled ? angled[1].trim() : raw;\n}\n\nfunction domainOf(address) {\n\tconst at = parseAddress(address).lastIndexOf('@');\n\treturn at === -1 ? '' : parseAddress(address).slice(at + 1);\n}\n\n/**\n * @param {string} fromAddress\n * @returns {{priority_tier: string, tier_source: 'lookup'|'default', tier_rank: number, weight_floor: number, matched_on: 'address'|'domain'|null}}\n */\nfunction lookupTier(fromAddress) {\n\tconst address = parseAddress(fromAddress);\n\tconst domain = domainOf(address);\n\n\tlet tier = null;\n\tlet matchedOn = null;\n\n\tif (address && Object.hasOwn(contacts.byAddress, address)) {\n\t\ttier = contacts.byAddress[address];\n\t\tmatchedOn = 'address';\n\t} else if (domain && Object.hasOwn(contacts.byDomain, domain)) {\n\t\ttier = contacts.byDomain[domain];\n\t\tmatchedOn = 'domain';\n\t}\n\n\tconst source = tier ? 'lookup' : 'default';\n\tconst resolved = tier ?? contacts.defaultTier;\n\tconst meta = contacts.tiers[resolved];\n\n\tif (!meta) {\n\t\tthrow new Error(`contacts.json maps ${address} to unknown tier \"${resolved}\"`);\n\t}\n\n\treturn {\n\t\tpriority_tier: resolved,\n\t\ttier_source: source,\n\t\ttier_rank: meta.rank,\n\t\tweight_floor: meta.weightFloor,\n\t\tmatched_on: matchedOn,\n\t};\n}\n\n/**\n * Strips any tier-shaped field a model tried to emit. Called on every extractor result\n * before the tier lookup is merged in, so a hallucinated tier can never reach a record.\n */\nconst MODEL_TIER_FIELDS = [\n\t'priority_tier',\n\t'tier',\n\t'tier_source',\n\t'priority',\n\t'importance',\n\t'urgency',\n\t'weight',\n];\n\nfunction stripModelTier(extracted) {\n\tconst clean = { ...extracted };\n\tconst removed = [];\n\tfor (const field of MODEL_TIER_FIELDS) {\n\t\tif (field in clean) {\n\t\t\tremoved.push(field);\n\t\t\tdelete clean[field];\n\t\t}\n\t}\n\treturn { clean, removed };\n}\n\n// RED LINE: the tier is a table fact. No model runs in this node and none ever should.\nreturn $input.all().map((item) => ({\n  json: { ...item.json, tier: lookupTier(item.json.email.from) },\n}));"
+      },
+      "id": "aog-003",
+      "name": "Priority Tier Lookup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "inputText": "={{ $json.classifierText }}",
+        "categories": {
+          "categories": [
+            {
+              "category": "Bid Outcome",
+              "description": "The result of a bid or proposal that has already been submitted. Notice of award, notice of intent to award, selection, non-selection, rejection, apparent low bidder announcement, bid tabulation or tab sheet, pricing recap of all bidders, or cancellation of a solicitation after bids were opened. Use this even when the same message also asks for a signed agreement, bonds, insurance or other paperwork, because the outcome is the thing that matters."
+            },
+            {
+              "category": "Opportunity Update",
+              "description": "New information on a solicitation AOG already has. Addenda, revisions, clarifications, extended or moved bid dates, added or removed scope, pre-bid minutes, answers to bidder questions. Use this even when the body reads like a brand new request, as long as it ties to an existing bid, ITB, RFP or project number, or is labeled addendum, revision, amendment or supplement."
+            },
+            {
+              "category": "New Opportunity",
+              "description": "A solicitation AOG has not seen before: ITB, RFP, RFQ, RFI, invitation to bid, request for proposal or qualifications, or an owner, GC, architect or civil engineer asking AOG to price, propose or quote geotechnical work. This is the first arrival of that solicitation. Signals: a bid or proposal number appearing for the first time, sealed bids due, plans and specs attached, pre-bid meeting announced, responses due by a date."
+            },
+            {
+              "category": "Active Project",
+              "description": "Coordination on work already awarded or underway, sent by someone outside AOG. Crew scheduling and mobilization, site access, drilling and boring logistics, lab results, deliverables and report timing, submittals, change requests, field problems, invoicing on a live job."
+            },
+            {
+              "category": "Compliance & Docs",
+              "description": "Requests for paperwork and qualification material. Certificate of insurance, W-9, prequalification or vendor registration forms, references, licenses, safety or EMR records, fee schedules requested as part of a prequal package, contract and subcontract documents routed for signature, lien waivers, certified payroll. Use this only when the paperwork request is the point of the message and no bid result is being announced."
+            },
+            {
+              "category": "Internal / Team",
+              "description": "Mail from an Alpha Omega Geotech address about running the business: crew and rig scheduling, lab turnaround, equipment, timesheets, internal admin and internal questions. Internal senders land here even when the subject touches a live job, unless the message is itself an outside solicitation, addendum or award being forwarded in."
+            },
+            {
+              "category": "Client & Network",
+              "description": "Relationship and business development with no live solicitation and no active job attached. Personal notes, catching up, coffee, conference follow-ups, congratulations, and warm introductions or referrals where someone offers to connect AOG to a prospect or client. Written by a person to a person, not a mailing list."
+            },
+            {
+              "category": "Low Priority / Noise",
+              "description": "Bulk and promotional mail with nothing for AOG to act on. Vendor sales and discount blasts, product announcements, firm newsletters, event and webinar marketing, industry digests, automated no-reply notifications, social network noise. Judge the content, not the sender: a marketing blast from a key client still belongs here. Never use this bin for a message that carries a solicitation, an addendum, a bid result or a document request."
+            }
+          ]
+        },
+        "options": {
+          "multiClass": false,
+          "fallback": "other",
+          "systemPromptTemplate": "You are the routing layer for the inbound mailbox at Alpha Omega Geotech (AOG), a geotechnical engineering and drilling firm. AOG bids on and performs subsurface investigation work for school districts, cities, counties, general contractors, architects, civil engineers and private developers.\n\nClassify the email into exactly one of these categories: Bid Outcome, Opportunity Update, New Opportunity, Active Project, Compliance & Docs, Internal / Team, Client & Network, Low Priority / Noise\n\nRoute on what the message is asking AOG to do, not on who sent it and not on how the subject line is worded.\n\nCATEGORY DEFINITIONS\n\nNew Opportunity: a solicitation AOG has not seen before. ITB, RFP, RFQ, RFI, invitation to bid, request for proposal or qualifications, or an owner, GC, architect or civil engineer asking AOG to price, propose or quote geotechnical work. Signals: a bid or proposal number appearing for the first time, sealed bids due, plans and specs attached, a pre-bid meeting, responses due by a date.\n\nOpportunity Update: new information on a solicitation AOG already has. Addenda, revisions, clarifications, extended or moved bid dates, added or removed scope, pre-bid minutes, answers to bidder questions. Use this even when the body reads like a brand new request, as long as it ties to an existing bid, ITB, RFP or project number, or is labeled addendum, revision, amendment or supplement.\n\nBid Outcome: the result of a bid or proposal already submitted. Notice of award, notice of intent to award, selection, non-selection, rejection, apparent low bidder announcement, bid tabulation or tab sheet, pricing recap of all bidders, cancellation after bids were opened.\n\nActive Project: coordination on work already awarded or underway, from someone outside AOG. Crew scheduling and mobilization, site access, drilling logistics, lab results, deliverables and report timing, submittals, change requests, field problems, invoicing on a live job.\n\nClient & Network: relationship and business development with no live solicitation and no active job attached. Catching up, coffee, conference follow-ups, congratulations, and warm introductions or referrals where someone offers to connect AOG to a prospect. Written by a person to a person, not by a mailing list.\n\nInternal / Team: mail from an AOG staff address about running the business. Crew and rig scheduling, lab turnaround, equipment, timesheets, internal admin, internal questions.\n\nCompliance & Docs: requests for paperwork and qualification material. Certificate of insurance, W-9, prequalification or vendor registration forms, references, licenses, safety or EMR records, a fee schedule requested as part of a prequal package, contract documents routed for signature, lien waivers, certified payroll.\n\nLow Priority / Noise: bulk and promotional mail with nothing to act on. Vendor sales blasts, product announcements, firm newsletters, event and webinar marketing, industry digests, automated no-reply notifications, social network noise.\n\nTIE-BREAK LADDER\n\nMore than one category will often look plausible. Work down this ladder and stop at the first line that fits.\n\n1. The message announces the result of a bid already submitted, including a tabulation or tab sheet. Choose Bid Outcome. Do this even when the same message also asks for a signed agreement, bonds or insurance, because the outcome is what matters.\n2. The message ties to a solicitation AOG already has, or is labeled addendum, revision, amendment, supplement or clarification, or references an existing bid or ITB or RFP number. Choose Opportunity Update. Do this even when it adds scope and reads like a fresh request.\n3. The message is a first-time solicitation or a first-time request to price, bid, propose or quote. Choose New Opportunity.\n4. The message concerns a job already awarded or underway and comes from outside AOG. Choose Active Project.\n5. The message exists to collect qualification or insurance paperwork. Choose Compliance & Docs.\n6. The sender is AOG staff and the subject is internal operations. Choose Internal / Team.\n7. The message is a person building or maintaining a relationship with no live solicitation and no live job. Choose Client & Network.\n8. The message is bulk or promotional with no action for AOG. Choose Low Priority / Noise.\n\nHARD RULES\n\nNever route a message to Low Priority / Noise if it carries a live solicitation, an addendum, a bid result, a deadline AOG has to meet, or a request for documents. A false positive on a pursuit category costs a glance. A false negative costs a bid. When you are torn between a pursuit category and Low Priority / Noise, take the pursuit category.\n\nJudge Low Priority / Noise on content, never on sender. A marketing blast or a firm newsletter from an important client is still noise. Sender importance is handled elsewhere in the pipeline and is not your job.\n\nFor a thread, classify the substance that drives the action, which is normally the message that opened the thread. Do not let trailing acknowledgements like thanks, sounds good or talk soon pull the thread into Client & Network.\n\nAn intro or referral offer is Client & Network, not New Opportunity. A named prospect who has not asked for anything yet is not a solicitation.\n\nIf nothing fits with confidence, take the fallback option rather than forcing a category. Vague notes with no subject and no discernible ask belong in the fallback. Guessing a bin is worse than admitting the message is unclear.\n\nDo not explain your reasoning. Output only the JSON.\n\n\nOutput a single JSON object and nothing else. It must have exactly these keys:\n\n{\n  \"Bid Outcome\": boolean,\n  \"Opportunity Update\": boolean,\n  \"New Opportunity\": boolean,\n  \"Active Project\": boolean,\n  \"Compliance & Docs\": boolean,\n  \"Internal / Team\": boolean,\n  \"Client & Network\": boolean,\n  \"Low Priority / Noise\": boolean,\n  \"fallback\": boolean\n}\n\nSet exactly one key to true and every other key to false.\nSet \"fallback\" to true when none of the named categories fit. That routes the message to Unclassified.\n\nCategories are mutually exclusive, and only one can be true.",
+          "enableAutoFixing": true
+        }
+      },
+      "id": "aog-004",
+      "name": "Text Classifier",
+      "type": "@n8n/n8n-nodes-langchain.textClassifier",
+      "typeVersion": 1,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-5",
+        "options": {
+          "temperature": 0,
+          "maxTokensToSample": 2048
+        }
+      },
+      "id": "aog-005",
+      "name": "Classifier Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        220,
+        540
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "REPLACE_ME",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cat-0",
+              "name": "category",
+              "value": "Bid Outcome",
+              "type": "string"
+            },
+            {
+              "id": "fol-0",
+              "name": "targetFolder",
+              "value": "AOG/03 Bid Outcome",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aog-006",
+      "name": "Bin: Bid Outcome",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        500,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cat-1",
+              "name": "category",
+              "value": "Opportunity Update",
+              "type": "string"
+            },
+            {
+              "id": "fol-1",
+              "name": "targetFolder",
+              "value": "AOG/02 Opportunity Update",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aog-007",
+      "name": "Bin: Opportunity Update",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        500,
+        -30
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cat-2",
+              "name": "category",
+              "value": "New Opportunity",
+              "type": "string"
+            },
+            {
+              "id": "fol-2",
+              "name": "targetFolder",
+              "value": "AOG/01 New Opportunity",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aog-008",
+      "name": "Bin: New Opportunity",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        500,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cat-3",
+              "name": "category",
+              "value": "Active Project",
+              "type": "string"
+            },
+            {
+              "id": "fol-3",
+              "name": "targetFolder",
+              "value": "AOG/04 Active Project",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aog-009",
+      "name": "Bin: Active Project",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        500,
+        190
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cat-4",
+              "name": "category",
+              "value": "Compliance & Docs",
+              "type": "string"
+            },
+            {
+              "id": "fol-4",
+              "name": "targetFolder",
+              "value": "AOG/07 Compliance & Docs",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aog-010",
+      "name": "Bin: Compliance & Docs",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cat-5",
+              "name": "category",
+              "value": "Internal / Team",
+              "type": "string"
+            },
+            {
+              "id": "fol-5",
+              "name": "targetFolder",
+              "value": "AOG/06 Internal - Team",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aog-011",
+      "name": "Bin: Internal / Team",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        500,
+        410
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cat-6",
+              "name": "category",
+              "value": "Client & Network",
+              "type": "string"
+            },
+            {
+              "id": "fol-6",
+              "name": "targetFolder",
+              "value": "AOG/05 Client & Network",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aog-012",
+      "name": "Bin: Client & Network",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        500,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cat-7",
+              "name": "category",
+              "value": "Low Priority / Noise",
+              "type": "string"
+            },
+            {
+              "id": "fol-7",
+              "name": "targetFolder",
+              "value": "AOG/08 Low Priority - Noise",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aog-013",
+      "name": "Bin: Low Priority / Noise",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        500,
+        630
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cat-8",
+              "name": "category",
+              "value": "Unclassified",
+              "type": "string"
+            },
+            {
+              "id": "fol-8",
+              "name": "targetFolder",
+              "value": "AOG/09 Unclassified",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aog-014",
+      "name": "Bin: Unclassified",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        500,
+        740
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "aog-015",
+      "name": "Routed",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        740,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "move",
+        "messageId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.messageId }}"
+        },
+        "folderId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $json.targetFolder }}"
+        }
+      },
+      "id": "aog-016",
+      "name": "Move To Folder",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Microsoft Outlook account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "text": "={{ 'ROUTED AS: ' + $('Routed').item.json.category + '\\n\\n' + $('Routed').item.json.extractorText }}",
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"due_date\": {\n      \"type\": [\n        \"string\",\n        \"null\"\n      ],\n      \"description\": \"The single date AOG has to hit, as YYYY-MM-DDTHH:mm when a time is given, otherwise YYYY-MM-DD. Null when the message states no date. Never guess and never copy a date from a different message.\"\n    },\n    \"primary_due_date\": {\n      \"type\": [\n        \"string\",\n        \"null\"\n      ],\n      \"description\": \"Same value as due_date. Present so downstream jobs can read one field name when a message carries several dates.\"\n    },\n    \"other_dates\": {\n      \"type\": \"array\",\n      \"description\": \"Every other date in the message that is not the primary due date. Pre-bid meetings, site walks, question deadlines, award dates, mobilization dates. Empty array when there are none.\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"label\": {\n            \"type\": \"string\",\n            \"description\": \"What the date is, in the message's own words, lowercased. For example: pre-bid, site walk, questions due, award, mobilization.\"\n          },\n          \"date\": {\n            \"type\": \"string\",\n            \"description\": \"YYYY-MM-DDTHH:mm when a time is given, otherwise YYYY-MM-DD.\"\n          }\n        },\n        \"required\": [\n          \"label\",\n          \"date\"\n        ]\n      }\n    },\n    \"date_in_attachment\": {\n      \"type\": \"boolean\",\n      \"description\": \"True when the message defers its dates to an attachment or a link rather than stating them in the body. For example 'see attached RFQ for all dates'. False otherwise.\"\n    },\n    \"project_name\": {\n      \"type\": [\n        \"string\",\n        \"null\"\n      ],\n      \"description\": \"The project as named in the message, without the bid number, without the word project, and without the scope of work. From 'ITB 26-118 Geotechnical Investigation, New Elementary' the project name is 'New Elementary'. Null when no project is named.\"\n    },\n    \"client_name\": {\n      \"type\": [\n        \"string\",\n        \"null\"\n      ],\n      \"description\": \"The organization the work is for, written the way a person would say it out loud. Derive it from the signature, the letterhead or the sender domain. From purchasing@example-isd.org that is 'Example ISD'. Null when it cannot be determined from the message.\"\n    },\n    \"bid_reference\": {\n      \"type\": [\n        \"string\",\n        \"null\"\n      ],\n      \"description\": \"The solicitation number as written, for example 'ITB 26-118' or 'RFP 2026-04'. Null when the message carries none. This is the key that ties addenda back to the original opportunity.\"\n    },\n    \"project_stage\": {\n      \"type\": [\n        \"string\",\n        \"null\"\n      ],\n      \"description\": \"One of exactly: 'proposal requested', 'addendum', 'bid submitted', 'awarded', 'not awarded', 'active project', 'closeout', 'prequalification', 'none'. Use 'proposal requested' when AOG is being asked to bid or propose. Use 'active project' when the work is already underway. Null only when the message is not about a project at all.\"\n    },\n    \"requested_items\": {\n      \"type\": \"array\",\n      \"description\": \"Concrete deliverables the sender is asking AOG to send back, one per entry, in the order requested, using the plain name of the item. Write out abbreviations: 'COI' becomes 'certificate of insurance', 'W-9' stays 'W-9'. A request to bid is the single item 'bid'. Empty array when nothing is being requested.\",\n      \"items\": {\n        \"type\": \"string\"\n      }\n    },\n    \"response_needed\": {\n      \"type\": \"boolean\",\n      \"description\": \"True when a person is waiting on something from AOG: an answer, a document, a price, a date, a decision, or a bid. False for bulk mail, newsletters, vendor promotions, automated notifications, and messages that are purely informational with no ask.\"\n    },\n    \"intro_opportunity\": {\n      \"type\": \"boolean\",\n      \"description\": \"True when the sender offers to introduce, refer or connect AOG to someone new. False otherwise.\"\n    },\n    \"intro_target\": {\n      \"type\": [\n        \"string\",\n        \"null\"\n      ],\n      \"description\": \"Who the introduction is to, described as the message describes them. Null when intro_opportunity is false.\"\n    },\n    \"action_summary\": {\n      \"type\": \"string\",\n      \"description\": \"One sentence, under 25 words, saying what AOG has to do and by when. Use only facts present in the message.\"\n    }\n  },\n  \"required\": [\n    \"due_date\",\n    \"primary_due_date\",\n    \"other_dates\",\n    \"date_in_attachment\",\n    \"project_name\",\n    \"client_name\",\n    \"bid_reference\",\n    \"project_stage\",\n    \"requested_items\",\n    \"response_needed\",\n    \"intro_opportunity\",\n    \"intro_target\",\n    \"action_summary\"\n  ]\n}",
+        "options": {
+          "systemPromptTemplate": "You pull facts out of email for Alpha Omega Geotech, a geotechnical engineering and drilling firm. The routing layer has already decided what kind of message this is. Your only job is to fill the schema.\n\nThe message arrives with a REFERENCE DATE line at the top. That is the date the email was received, and every relative date resolves against it.\n\nDATE RULES\n\nResolve bare dates to the nearest sensible calendar date on or after the reference date. 2/14 with a reference date in January 2026 is 2026-02-14, not 2027. Resolve weekday names forward: \"Friday\" with a Thursday reference date is the next day, \"by Friday\" the same. \"Next Friday\" means the Friday of the following week.\n\nKeep the time when the message gives one. 2:00 PM becomes T14:00. Drop the time when the message gives none, and write date only.\n\nTimes are local to the mailbox. Do not convert time zones and do not append Z or an offset.\n\nA message can name several dates. The one AOG has to hit goes in due_date and primary_due_date. Everything else goes in other_dates with a label. A bid due date beats a pre-bid meeting. A proposal deadline beats a question deadline.\n\nWhen the body states no date and points at an attachment or a link instead, set due_date and primary_due_date to null and set date_in_attachment to true. Do not invent a date to fill the field. A wrong date is worse than a null, because a null gets a human's attention and a wrong date does not.\n\nGENERAL RULES\n\nA field you cannot fill from the message is null, or an empty array for list fields. You never guess, never infer from what is typical, and never carry a value over from another email.\n\nExtract what is written, not what you expect. If the message names one boring, it is one boring.\n\nDo not emit a priority, a tier, an importance or an urgency. That is set from the contacts table elsewhere and anything you produce there would be thrown away.\n\nDo not summarize the whole email. Only action_summary is prose, and it stays under 25 words.\n\nOutput only the JSON.\n"
+        }
+      },
+      "id": "aog-017",
+      "name": "Information Extractor",
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1,
+      "position": [
+        1180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-5",
+        "options": {
+          "temperature": 0,
+          "maxTokensToSample": 2048
+        }
+      },
+      "id": "aog-018",
+      "name": "Extractor Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        1180,
+        540
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "REPLACE_ME",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const settings = {\n \"$comment\": \"Operational knobs. Anything the spec called a placeholder is marked PLACEHOLDER and needs a real value from Alex before go-live.\",\n \"mailbox\": {\n  \"address\": \"PLACEHOLDER_MAILBOX_ADDRESS\",\n  \"owner\": \"Alex\",\n  \"signOff\": \"Alex\",\n  \"company\": \"Alpha Omega Geotech\",\n  \"companyShort\": \"AOG\",\n  \"timezone\": \"America/Chicago\"\n },\n \"llm\": {\n  \"provider\": \"anthropic\",\n  \"classifierModel\": \"claude-sonnet-5\",\n  \"extractorModel\": \"claude-sonnet-5\",\n  \"summaryModel\": \"claude-sonnet-5\",\n  \"draftModel\": \"claude-opus-5\",\n  \"temperature\": 0,\n  \"maxTokens\": 2048,\n  \"$comment\": \"Temperature 0 on classifier and extractor per the spec's drift note. Draft generation is the one place a hair of variation is fine, but it runs at 0 too so the three-pass fixture check stays honest.\"\n },\n \"staleFollowUp\": {\n  \"thresholdDays\": 5,\n  \"$comment_thresholdDays\": \"PLACEHOLDER. Spec STL-01/02 assume 5. Confirm the real number with Alex.\",\n  \"businessDaysOnly\": false,\n  \"$comment_businessDaysOnly\": \"OPEN QUESTION. Left off so STL-01 counts days the way the spec writes them (day 0 to day 6 is 6). Turn it on and a Friday send would not surface until the following Friday, which is probably what a person actually wants. Alex decides.\",\n  \"onlyTiers\": [\n   \"internal\",\n   \"key_client\",\n   \"client\",\n   \"prospect\"\n  ],\n  \"ignoreCategories\": [\n   \"Low Priority / Noise\",\n   \"Unclassified\"\n  ],\n  \"threadAware\": true,\n  \"$comment_threadAware\": \"STL-03: any inbound on the same conversation counts as an answer, no matter who sent it.\"\n },\n \"learning\": {\n  \"startWeight\": 0.5,\n  \"minWeight\": 0,\n  \"maxWeight\": 1,\n  \"deleteUnreadDelta\": -0.06,\n  \"deleteReadDelta\": -0.03,\n  \"archiveUnreadDelta\": -0.02,\n  \"fastReplyDelta\": 0.08,\n  \"fastReplyMinutes\": 15,\n  \"openedNoReplyDelta\": 0.01,\n  \"singleActionCap\": 0.02,\n  \"$comment_singleActionCap\": \"LRN-03 overfitting guard. Any sender sitting on a tier with a weight floor gets its per-action movement clamped to this, and can never be pushed below the floor. One delete cannot knock a key client down.\",\n  \"dampenedTiers\": [\n   \"internal\",\n   \"key_client\"\n  ],\n  \"minActionsBeforeTierChange\": 8\n },\n \"dailySummary\": {\n  \"sendAt\": \"07:00\",\n  \"windowHours\": 24,\n  \"sections\": [\n   \"New Opportunities\",\n   \"Critical Deadlines\",\n   \"High-Priority Comms\",\n   \"Outstanding Follow-ups\",\n   \"Awaiting Decision\"\n  ],\n  \"emptySectionText\": \"None.\",\n  \"criticalDeadlineHorizonDays\": 60,\n  \"$comment_criticalDeadlineHorizonDays\": \"SUMX-02 sets the floor on this. CLS-01 arrives 2026-01-15 with a 2026-02-14 bid date, 30 days out, and the spec requires that date under Critical Deadlines the same day. So the horizon has to clear a normal bid cycle. It exists only to keep an absurd far-future date out of the brief.\"\n },\n \"integration\": {\n  \"approvalGate\": \"required\",\n  \"$comment_approvalGate\": \"INT-03 red line. 'required' means every outbound write to Pipedrive, SharePoint or the R: drive is queued as a pending intent and logged as a dry run. Nothing hits a live system until a human clears it. Do not set this to 'off'.\",\n  \"dryRunLog\": \"logs/intended-writes.jsonl\",\n  \"dedupeKey\": \"internetMessageId\",\n  \"targets\": {\n   \"pipedrive\": {\n    \"enabled\": false,\n    \"reason\": \"awaiting API token\"\n   },\n   \"sharepoint\": {\n    \"enabled\": false,\n    \"reason\": \"awaiting site + drive id\"\n   },\n   \"rdrive\": {\n    \"enabled\": false,\n    \"reason\": \"awaiting UNC path\"\n   }\n  }\n },\n \"drafts\": {\n  \"createFor\": [\n   \"New Opportunity\",\n   \"Opportunity Update\",\n   \"Active Project\",\n   \"Compliance & Docs\",\n   \"Client & Network\"\n  ],\n  \"neverCreateFor\": [\n   \"Low Priority / Noise\",\n   \"Unclassified\",\n   \"Bid Outcome\"\n  ],\n  \"$comment_neverCreateFor\": \"Bid Outcome is off the auto-draft list on purpose. An award or a loss is a message Alex answers himself.\",\n  \"saveAsDraftOnly\": true,\n  \"maxWords\": 150\n }\n};\nconst contacts = {\n \"$comment\": \"Priority tier lookup. This table is the ONLY thing allowed to set priority_tier. The classifier and extractor never see it and never emit a tier field. Suite 3 red line: 'Any priority tier set by the LLM instead of the contacts lookup' is a ship blocker, so tier() is pure data lookup with no model in the path. Addresses below are the spec placeholders; swap them for the real AOG contact list before go-live and the fixtures still run.\",\n \"$comment_weights\": \"startWeight is where a sender begins on the learning loop. weightFloor is how far the loop is allowed to push it down, ever. The gap between the two is the room a tier has to move, which is why key_client has room to drift a little but can never fall through the floor into vendor territory.\",\n \"tiers\": {\n  \"internal\": {\n   \"rank\": 0,\n   \"startWeight\": 0.9,\n   \"weightFloor\": 0.8,\n   \"label\": \"Alpha Omega Geotech staff\"\n  },\n  \"key_client\": {\n   \"rank\": 1,\n   \"startWeight\": 0.8,\n   \"weightFloor\": 0.7,\n   \"label\": \"Named key client or key GC\"\n  },\n  \"client\": {\n   \"rank\": 2,\n   \"startWeight\": 0.65,\n   \"weightFloor\": 0.5,\n   \"label\": \"Active or past client\"\n  },\n  \"prospect\": {\n   \"rank\": 3,\n   \"startWeight\": 0.5,\n   \"weightFloor\": 0.4,\n   \"label\": \"Known prospect, no work yet\"\n  },\n  \"vendor\": {\n   \"rank\": 4,\n   \"startWeight\": 0.3,\n   \"weightFloor\": 0.2,\n   \"label\": \"Supplier or service vendor\"\n  },\n  \"unknown\": {\n   \"rank\": 5,\n   \"startWeight\": 0.5,\n   \"weightFloor\": 0.3,\n   \"label\": \"Not in the contacts table\"\n  }\n },\n \"defaultTier\": \"unknown\",\n \"byAddress\": {\n  \"pm@gc-example.com\": \"key_client\",\n  \"estimator@gc-example.com\": \"key_client\",\n  \"subcontracts@gc-example.com\": \"key_client\",\n  \"garic@alphaomega-example.com\": \"internal\",\n  \"principal@arch-example.com\": \"key_client\",\n  \"news@arch-example.com\": \"key_client\",\n  \"purchasing@example-isd.org\": \"client\",\n  \"contracts@city-example.gov\": \"client\",\n  \"purchasing@city-example.gov\": \"client\",\n  \"purchasing@county-example.gov\": \"prospect\",\n  \"civil@example-eng.com\": \"client\",\n  \"developer@example-dev.com\": \"prospect\",\n  \"news@drillrig-vendor.com\": \"vendor\"\n },\n \"byDomain\": {\n  \"alphaomega-example.com\": \"internal\",\n  \"aogeotech.com\": \"internal\"\n }\n};\n\n/**\n * Priority tier lookup.\n *\n * Spec red line: \"Any priority tier set by the LLM instead of the contacts lookup\" is a\n * ship blocker. So there is no model anywhere in this file and there never should be.\n * Address match wins over domain match, and a miss returns the default tier with\n * tier_source 'default' so the caller can tell a real lookup from a fallback.\n *\n * Suite 3 cases: PRI-01 address hit, PRI-02 miss, PRI-03 internal hit, PRI-04 the split\n * where content routed the message to Noise but the tier stays whatever the table says.\n */\n\nconst normalize = (address) => String(address ?? '').trim().toLowerCase();\n\n/** Pulls the address out of \"Name <addr@host>\" or a bare address. */\nfunction parseAddress(input) {\n\tconst raw = normalize(input);\n\tconst angled = raw.match(/<([^>]+)>/);\n\treturn angled ? angled[1].trim() : raw;\n}\n\nfunction domainOf(address) {\n\tconst at = parseAddress(address).lastIndexOf('@');\n\treturn at === -1 ? '' : parseAddress(address).slice(at + 1);\n}\n\n/**\n * @param {string} fromAddress\n * @returns {{priority_tier: string, tier_source: 'lookup'|'default', tier_rank: number, weight_floor: number, matched_on: 'address'|'domain'|null}}\n */\nfunction lookupTier(fromAddress) {\n\tconst address = parseAddress(fromAddress);\n\tconst domain = domainOf(address);\n\n\tlet tier = null;\n\tlet matchedOn = null;\n\n\tif (address && Object.hasOwn(contacts.byAddress, address)) {\n\t\ttier = contacts.byAddress[address];\n\t\tmatchedOn = 'address';\n\t} else if (domain && Object.hasOwn(contacts.byDomain, domain)) {\n\t\ttier = contacts.byDomain[domain];\n\t\tmatchedOn = 'domain';\n\t}\n\n\tconst source = tier ? 'lookup' : 'default';\n\tconst resolved = tier ?? contacts.defaultTier;\n\tconst meta = contacts.tiers[resolved];\n\n\tif (!meta) {\n\t\tthrow new Error(`contacts.json maps ${address} to unknown tier \"${resolved}\"`);\n\t}\n\n\treturn {\n\t\tpriority_tier: resolved,\n\t\ttier_source: source,\n\t\ttier_rank: meta.rank,\n\t\tweight_floor: meta.weightFloor,\n\t\tmatched_on: matchedOn,\n\t};\n}\n\n/**\n * Strips any tier-shaped field a model tried to emit. Called on every extractor result\n * before the tier lookup is merged in, so a hallucinated tier can never reach a record.\n */\nconst MODEL_TIER_FIELDS = [\n\t'priority_tier',\n\t'tier',\n\t'tier_source',\n\t'priority',\n\t'importance',\n\t'urgency',\n\t'weight',\n];\n\nfunction stripModelTier(extracted) {\n\tconst clean = { ...extracted };\n\tconst removed = [];\n\tfor (const field of MODEL_TIER_FIELDS) {\n\t\tif (field in clean) {\n\t\t\tremoved.push(field);\n\t\t\tdelete clean[field];\n\t\t}\n\t}\n\treturn { clean, removed };\n}\n\n/**\n * Second-pass extraction. Suite 2.\n *\n * Runs after routing, on the same text the classifier saw plus a REFERENCE DATE line so\n * relative dates (\"Friday\", \"2/14\") resolve against when the mail arrived rather than\n * against whenever the job happens to run.\n *\n * Red line: \"Any real deadline that the extractor records as 'no deadline'.\" The schema\n * pushes hard on that in both directions. A stated date must be captured. An absent date\n * must stay null with date_in_attachment set, because a null gets a human's attention and\n * an invented date does not.\n */\n\nfunction buildExtractorSystemPrompt() {\n\treturn [\n\t\tprompts.extractor,\n\t\t'',\n\t\t'Output a single JSON object matching this schema and nothing else:',\n\t\t'',\n\t\tJSON.stringify(extractorSchema, null, 2),\n\t].join('\\n');\n}\n\nconst EMPTY = {\n\tdue_date: null,\n\tprimary_due_date: null,\n\tother_dates: [],\n\tdate_in_attachment: false,\n\tproject_name: null,\n\tclient_name: null,\n\tbid_reference: null,\n\tproject_stage: null,\n\trequested_items: [],\n\tresponse_needed: false,\n\tintro_opportunity: false,\n\tintro_target: null,\n\taction_summary: '',\n};\n\n/** Fill gaps and keep primary_due_date in step with due_date. */\nfunction normalizeExtraction(raw) {\n\tconst { clean, removed } = stripModelTier(raw ?? {});\n\tconst out = { ...EMPTY, ...clean };\n\n\tout.other_dates = Array.isArray(out.other_dates) ? out.other_dates : [];\n\tout.requested_items = Array.isArray(out.requested_items) ? out.requested_items : [];\n\n\tif (out.due_date && !out.primary_due_date) out.primary_due_date = out.due_date;\n\tif (out.primary_due_date && !out.due_date) out.due_date = out.primary_due_date;\n\n\tif (!out.intro_opportunity) out.intro_target = null;\n\n\treturn { extracted: out, droppedFields: removed };\n}\n\n/**\n * @param {object} input email or thread fixture, needs receivedAt for date resolution\n * @param {object} [opts] {pass, model, category}\n */\nasync function extract(input, opts = {}) {\n\tconst system = buildExtractorSystemPrompt();\n\tconst user = [\n\t\topts.category ? `ROUTED AS: ${opts.category}` : null,\n\t\trenderInput(input, { withReferenceDate: true }),\n\t]\n\t\t.filter(Boolean)\n\t\t.join('\\n\\n');\n\n\tconst text = await callModel({\n\t\tsystem,\n\t\tuser,\n\t\tmodel: opts.model ?? settings.llm.extractorModel,\n\t\ttemperature: settings.llm.temperature,\n\t\tpass: opts.pass ?? 0,\n\t});\n\n\tconst { extracted, droppedFields } = normalizeExtraction(parseJsonResponse(text));\n\n\treturn { extracted, droppedFields };\n}\n\n// The extractor output is re-joined with the item it came from, and anything tier-shaped\n// the model produced is dropped here rather than trusted.\nreturn $input.all().map((item, index) => {\n  const source = $('Routed').all()[index].json;\n  const { extracted, droppedFields } = normalizeExtraction(item.json.output ?? item.json);\n\n  return {\n    json: {\n      messageId: source.messageId,\n      internetMessageId: source.internetMessageId,\n      conversationId: source.conversationId,\n      email: source.email,\n      category: source.category,\n      targetFolder: source.targetFolder,\n      tier: source.tier,\n      extracted,\n      dropped_model_fields: droppedFields,\n      processed_at: new Date().toISOString(),\n    },\n  };\n});"
+      },
+      "id": "aog-019",
+      "name": "Merge Facts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "response-needed",
+              "leftValue": "={{ $json.extracted.response_needed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "draftable-category",
+              "leftValue": "[\"New Opportunity\",\"Opportunity Update\",\"Active Project\",\"Compliance & Docs\",\"Client & Network\"]",
+              "rightValue": "={{ $json.category }}",
+              "operator": {
+                "type": "array",
+                "operation": "contains",
+                "rightType": "any"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "aog-020",
+      "name": "Needs A Reply?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1620,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ 'EMAIL TO REPLY TO:\\n\\n' + 'From: ' + $json.email.from + '\\nSubject: ' + $json.email.subject + '\\n\\n' + $json.email.body + '\\n\\nFACTS ALREADY EXTRACTED (this is everything you know):\\n\\n' + 'due date: ' + ($json.extracted.due_date || 'none stated') + '\\nproject: ' + ($json.extracted.project_name || 'not named') + '\\nclient: ' + ($json.extracted.client_name || 'not named') + '\\nthey are asking for: ' + (($json.extracted.requested_items || []).join(', ') || 'nothing specific') + '\\nstage: ' + ($json.extracted.project_stage || 'unknown') + '\\n\\nSign off as Alex.' }}",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "SystemMessagePromptTemplate",
+              "message": "You write reply drafts for Alex at Alpha Omega Geotech (AOG), a geotechnical engineering and drilling firm. Every draft you write lands in Alex's drafts folder. Nothing you write is ever sent automatically. Alex reads it, edits it, and sends it himself.\n\nWrite the reply as Alex. Plain and direct, the way one working professional writes to another. Acknowledge, answer what you can answer, name a next step, stop.\n\nWHAT YOU MAY NOT SAY\n\nYou have the thread and the extracted facts. You have nothing else. Anything not in those two places does not exist.\n\nNo prices, no rates, no unit costs, no lump sums, no dollar figures of any kind. AOG's pricing is not in front of you and estimating it would be a fabrication. When someone asks what the work costs, say Alex will follow up with a number, and say when.\n\nNo promised dates unless the thread already contains that date. Do not invent a mobilization day, a turnaround time, a report date or a crew availability window. \"Later this week\" is an invention too.\n\nNo boring counts, depths, quantities, scopes or specs beyond what the thread states.\n\nNo claim about what AOG has done, holds, or is certified for unless the thread says it.\n\nWhen you cannot answer something, say so in one clause and hand it to Alex. A draft that defers cleanly is a good draft. A draft that guesses is a defect.\n\nHOW IT READS\n\nContractions throughout. It's, we'll, don't, can't, I'll. This is the biggest single thing that keeps it sounding like a person.\n\nNo em dashes. Use a comma and a conjunction, a period, parentheses, or a colon.\n\nNo semicolons. No Oxford commas.\n\nVary the sentence length. Some short. Let others run a little longer when they carry more. Never hold the same length three sentences running.\n\nNever open with a throat-clear. No \"I hope this email finds you well\", no \"Thank you for reaching out\", no \"I trust this finds you\". Open on the actual subject.\n\nNever close with a helpful-bot sign-off. No \"Please don't hesitate to reach out\", no \"I look forward to hearing from you\", no \"Let me know if you need anything else\". End on the next step and sign off with the name.\n\nBANNED WORDS\n\nDo not use any of these, and do not reach for a synonym that is doing the same job: delve, leverage, utilize, harness, unlock, unleash, empower, facilitate, foster, streamline, navigate, spearhead, underscore, embark, elevate, showcase, robust, comprehensive, seamless, holistic, meticulous, innovative, cutting-edge, invaluable, paramount, impactful, multifaceted, nuanced, intricate, tapestry, realm, testament, beacon, myriad, landscape, ecosystem, paradigm, synergy, roadmap, journey, endeavor, cornerstone, stakeholders, deliverables, bandwidth, touchpoint, furthermore, moreover, additionally, notably, crucially, consequently, thereby, hence, whilst, nonetheless, nevertheless, in conclusion, ultimately, overall, in summary, at the end of the day, that being said, it's worth noting, it's important to note, rest assured, kindly.\n\nBANNED SHAPES\n\nNever write \"not just X, but Y\" or any reworded version of it.\n\nNever pose a question and answer it in the next breath. No \"The timeline? Two weeks.\"\n\nNever start three sentences in a row the same way.\n\nNever tack an editorial participle onto the end of a sentence. No \"ensuring a smooth process\", no \"highlighting our commitment\".\n\nFORMAT\n\nUnder 150 words. Most replies want fewer than 80.\n\nPlain text. No markdown, no bold, no bullet symbols. A short list is fine as plain lines when the sender asked for several distinct items.\n\nSign off with the first name on its own line. Nothing after it.\n\nOutput only the body of the reply. No subject line, no greeting boilerplate beyond a normal one-line greeting, no commentary about the draft.\n"
+            }
+          ]
+        }
+      },
+      "id": "aog-021",
+      "name": "Write Draft",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.6,
+      "position": [
+        1860,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "model": "claude-opus-5",
+        "options": {
+          "temperature": 0,
+          "maxTokensToSample": 2048
+        }
+      },
+      "id": "aog-022",
+      "name": "Draft Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        1860,
+        440
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "REPLACE_ME",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Guardrail lint for generated reply drafts.\n *\n * Suite 5 asks for two separate things and this file does both:\n *   DRV-01  \"Lint: no em dash, no banned vocabulary, contractions present\"  -> style rules\n *   DRV-03  \"Expect absent: any dollar figure\"                             -> fabrication rules\n *\n * The bar in the spec is 1.00 on the lint and 0 fabricated commitments, which means this\n * runs as a gate and not as a score. A draft that fails does not reach the drafts folder,\n * it goes back for one regeneration and then to a human if it fails again.\n *\n * Everything here is pure string work. No model reviews the model.\n */\n\nconst BANNED_WORDS = [\n\t'delve', 'delving', 'leverage', 'leveraging', 'utilize', 'utilizing', 'harness', 'unlock',\n\t'unleash', 'empower', 'facilitate', 'foster', 'bolster', 'streamline', 'spearhead',\n\t'underscore', 'underscores', 'illuminate', 'elucidate', 'embark', 'unravel', 'elevate',\n\t'reimagine', 'revolutionize', 'transcend', 'resonate', 'showcase', 'grapple', 'intertwine',\n\t'garner', 'evoke', 'exemplify', 'amplify', 'augment', 'conceptualize', 'glean', 'strive',\n\t'thrive', 'unveil', 'multifaceted', 'nuanced', 'intricate', 'seamless', 'seamlessly',\n\t'robust', 'comprehensive', 'scalable', 'cutting-edge', 'holistic', 'meticulous',\n\t'meticulously', 'groundbreaking', 'transformative', 'innovative', 'vibrant', 'compelling',\n\t'invaluable', 'paramount', 'poignant', 'timeless', 'relentless', 'tireless', 'noteworthy',\n\t'commendable', 'exemplary', 'versatile', 'unprecedented', 'profound', 'captivating',\n\t'daunting', 'burgeoning', 'granular', 'impactful', 'mission-critical', 'pervasive',\n\t'thought-provoking', 'unparalleled', 'unwavering', 'ever-evolving', 'state-of-the-art',\n\t'game-changing', 'tapestry', 'realm', 'testament', 'beacon', 'myriad', 'kaleidoscope',\n\t'landscape', 'ecosystem', 'paradigm', 'nexus', 'catalyst', 'synergy', 'roadmap', 'toolkit',\n\t'facet', 'endeavor', 'groundwork', 'cornerstone', 'bedrock', 'pinnacle', 'crucible',\n\t'linchpin', 'plethora', 'stakeholders', 'trajectory', 'touchpoint', 'deliverables',\n\t'bandwidth', 'furthermore', 'moreover', 'notably', 'crucially', 'consequently',\n\t'accordingly', 'effortlessly', 'fundamentally', 'holistically', 'undoubtedly',\n\t'subsequently', 'conversely', 'akin', 'amidst', 'arduous', 'hence', 'herein', 'thereby',\n\t'therein', 'thereof', 'thus', 'whilst', 'notwithstanding', 'nonetheless', 'nevertheless',\n\t'kindly',\n];\n\nconst BANNED_PHRASES = [\n\t'i hope this email finds you', 'i trust this email finds you', 'i hope this finds you',\n\t'thank you for reaching out', 'thanks for reaching out', 'i wanted to reach out',\n\t'please do not hesitate', \"please don't hesitate\", 'do not hesitate to reach out',\n\t'feel free to reach out', 'let me know if you need anything else',\n\t'i look forward to hearing from you', 'looking forward to hearing from you',\n\t'rest assured', 'at your earliest convenience', 'per my last email',\n\t'it is worth noting', \"it's worth noting\", 'it is important to note',\n\t\"it's important to note\", 'that being said', 'in conclusion', 'in summary',\n\t'to summarize', 'at the end of the day', 'a key takeaway', 'the bottom line is',\n\t'best regards', 'warm regards', 'as an ai', 'as a large language model',\n\t'here is a comprehensive', 'in today', 'let us delve', \"let's delve\", \"let's dive\",\n\t'at its core', 'this underscores', 'a testament to',\n];\n\nconst CONTRACTIONS =\n\t/\\b(?:it'?s|i'?m|i'?ll|i'?ve|i'?d|we'?ll|we'?re|we'?ve|we'?d|you'?re|you'?ll|you'?ve|don'?t|doesn'?t|didn'?t|can'?t|won'?t|wouldn'?t|shouldn'?t|couldn'?t|isn'?t|aren'?t|wasn'?t|weren'?t|haven'?t|hasn'?t|hadn'?t|there'?s|that'?s|here'?s|let'?s|they'?re|they'?ll|he'?s|she'?s|what'?s)\\b/i;\n\n/** $1,200 / 1200 dollars / USD 1200 / 45.50 per foot / 15% off. */\nconst MONEY_PATTERNS = [\n\t/\\$\\s?\\d/,\n\t/\\b\\d[\\d,]*(?:\\.\\d{2})?\\s?(?:dollars|usd)\\b/i,\n\t/\\busd\\s?\\$?\\d/i,\n\t/\\b\\d[\\d,]*(?:\\.\\d{2})?\\s?(?:per|\\/)\\s?(?:foot|ft|lf|boring|hour|hr|day|sample|test)\\b/i,\n];\n\n/** \"not just X, but Y\" and its rewordings. */\nconst NOT_JUST_PATTERNS = [\n\t/\\b(?:not|isn'?t|aren'?t|wasn'?t|weren'?t)\\s+just\\b[^.!?]{0,60}\\bbut\\b/i,\n\t/\\bisn'?t (?:just )?about\\b[^.!?]{0,60}\\bit'?s about\\b/i,\n\t/\\bit'?s not\\b[^.!?]{0,40}\\bit'?s\\b/i,\n\t/\\bthe question isn'?t\\b[^.!?]{0,60}\\bthe question is\\b/i,\n];\n\n/** A posed question answered in the next breath: \"The timeline? Two weeks.\" */\nconst SELF_POSED_QUESTION = /(?:^|[.!?]\\s)[A-Z][^.!?\\n]{0,40}\\?\\s+[A-Z][^?\\n]{0,60}[.!]/;\n\nconst violation = (rule, detail, match) => ({ rule, detail, match: match ?? null });\n\nconst wordsIn = (text) => text.toLowerCase().match(/[a-z][a-z'-]*/g) ?? [];\n\n/**\n * @param {string} draft            the generated reply body\n * @param {object} [opts]\n * @param {string} [opts.sourceText] thread + extracted facts, everything the draft is allowed to know\n * @param {number} [opts.maxWords]\n * @returns {{pass: boolean, violations: Array<{rule: string, detail: string, match: string|null}>, wordCount: number}}\n */\nfunction lintDraft(draft, opts = {}) {\n\tconst text = String(draft ?? '');\n\tconst source = String(opts.sourceText ?? '');\n\tconst maxWords = opts.maxWords ?? 150;\n\tconst v = [];\n\n\tif (!text.trim()) {\n\t\treturn { pass: false, violations: [violation('empty', 'draft is empty')], wordCount: 0 };\n\t}\n\n\t// --- punctuation -------------------------------------------------------\n\tif (/[—–]/.test(text)) {\n\t\tv.push(violation('em_dash', 'em or en dash present', text.match(/[—–].{0,30}/)?.[0]));\n\t}\n\tif (/\\s--\\s/.test(text)) {\n\t\tv.push(violation('em_dash', 'double hyphen used as a dash'));\n\t}\n\tif (text.includes(';')) {\n\t\tv.push(violation('semicolon', 'semicolon present'));\n\t}\n\tif (text.includes('…')) {\n\t\tv.push(violation('ellipsis', 'unicode ellipsis present'));\n\t}\n\n\t// --- vocabulary --------------------------------------------------------\n\tconst words = new Set(wordsIn(text));\n\tfor (const banned of BANNED_WORDS) {\n\t\tif (banned.includes('-') ? text.toLowerCase().includes(banned) : words.has(banned)) {\n\t\t\tv.push(violation('banned_word', `banned vocabulary: \"${banned}\"`, banned));\n\t\t}\n\t}\n\n\tconst lower = text.toLowerCase();\n\tfor (const phrase of BANNED_PHRASES) {\n\t\tif (lower.includes(phrase)) {\n\t\t\tv.push(violation('banned_phrase', `banned phrase: \"${phrase}\"`, phrase));\n\t\t}\n\t}\n\n\t// --- required voice ----------------------------------------------------\n\tif (!CONTRACTIONS.test(text)) {\n\t\tv.push(violation('no_contractions', 'no contractions, reads stiff'));\n\t}\n\n\t// --- banned shapes -----------------------------------------------------\n\tfor (const pattern of NOT_JUST_PATTERNS) {\n\t\tconst hit = text.match(pattern);\n\t\tif (hit) v.push(violation('not_just_x_but_y', '\"not just X, but Y\" shape', hit[0]));\n\t}\n\tconst posed = text.match(SELF_POSED_QUESTION);\n\tif (posed) {\n\t\tv.push(violation('self_posed_question', 'question posed and answered immediately', posed[0].trim()));\n\t}\n\n\tconst openers = (text.match(/(?:^|\\n)\\s*([A-Za-z']+)/g) ?? []).map((s) => s.trim().toLowerCase());\n\tfor (let i = 0; i + 2 < openers.length; i++) {\n\t\tif (openers[i] && openers[i] === openers[i + 1] && openers[i] === openers[i + 2]) {\n\t\t\tv.push(violation('anaphora', `three lines opening with \"${openers[i]}\"`));\n\t\t\tbreak;\n\t\t}\n\t}\n\n\t// --- fabrication guard -------------------------------------------------\n\tfor (const pattern of MONEY_PATTERNS) {\n\t\tconst hit = text.match(pattern);\n\t\tif (!hit) continue;\n\t\tif (source && source.toLowerCase().includes(hit[0].toLowerCase())) continue;\n\t\tv.push(violation('fabricated_price', 'dollar figure not present in the source thread', hit[0]));\n\t}\n\n\t// --- length ------------------------------------------------------------\n\tconst wordCount = wordsIn(text).length;\n\tif (wordCount > maxWords) {\n\t\tv.push(violation('too_long', `${wordCount} words, limit ${maxWords}`));\n\t}\n\n\treturn { pass: v.length === 0, violations: v, wordCount };\n}\n\nconst _internals = { BANNED_WORDS, BANNED_PHRASES, MONEY_PATTERNS };\n\n// The spec's bar on the lint is 1.00, so this is a gate and not a score. A draft that\n// fails does not reach the drafts folder, it goes to the human queue with its violations.\nreturn $input.all().map((item, index) => {\n  const source = $('Needs A Reply?').all()[index].json;\n  const body = item.json.text ?? item.json.response?.text ?? '';\n  const sourceText = source.email.subject + '\\n' + source.email.body;\n  const lint = lintDraft(body, { sourceText, maxWords: 150 });\n\n  return { json: { ...source, draft_body: body, lint, draft_ok: lint.pass } };\n});"
+      },
+      "id": "aog-023",
+      "name": "Lint Draft",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "lint-pass",
+              "leftValue": "={{ $json.draft_ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "aog-024",
+      "name": "Draft Clean?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2300,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "reply",
+        "messageId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.messageId }}"
+        },
+        "replyToSenderOnly": true,
+        "message": "={{ $json.draft_body }}",
+        "additionalFields": {},
+        "options": {
+          "saveAsDraft": true
+        }
+      },
+      "id": "aog-025",
+      "name": "Save Reply Draft",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        2540,
+        120
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Two lint failures in a row and nobody gets a draft. Better an empty drafts folder\n// than one Alex has to proofread for invented prices.\nreturn $input.all().map((item) => ({\n  json: {\n    ...item.json,\n    needs_human_draft: true,\n    reason: item.json.lint.violations.map((v) => v.detail).join('; '),\n  },\n}));"
+      },
+      "id": "aog-026",
+      "name": "Flag Draft For Human",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2540,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const settings = {\n \"$comment\": \"Operational knobs. Anything the spec called a placeholder is marked PLACEHOLDER and needs a real value from Alex before go-live.\",\n \"mailbox\": {\n  \"address\": \"PLACEHOLDER_MAILBOX_ADDRESS\",\n  \"owner\": \"Alex\",\n  \"signOff\": \"Alex\",\n  \"company\": \"Alpha Omega Geotech\",\n  \"companyShort\": \"AOG\",\n  \"timezone\": \"America/Chicago\"\n },\n \"llm\": {\n  \"provider\": \"anthropic\",\n  \"classifierModel\": \"claude-sonnet-5\",\n  \"extractorModel\": \"claude-sonnet-5\",\n  \"summaryModel\": \"claude-sonnet-5\",\n  \"draftModel\": \"claude-opus-5\",\n  \"temperature\": 0,\n  \"maxTokens\": 2048,\n  \"$comment\": \"Temperature 0 on classifier and extractor per the spec's drift note. Draft generation is the one place a hair of variation is fine, but it runs at 0 too so the three-pass fixture check stays honest.\"\n },\n \"staleFollowUp\": {\n  \"thresholdDays\": 5,\n  \"$comment_thresholdDays\": \"PLACEHOLDER. Spec STL-01/02 assume 5. Confirm the real number with Alex.\",\n  \"businessDaysOnly\": false,\n  \"$comment_businessDaysOnly\": \"OPEN QUESTION. Left off so STL-01 counts days the way the spec writes them (day 0 to day 6 is 6). Turn it on and a Friday send would not surface until the following Friday, which is probably what a person actually wants. Alex decides.\",\n  \"onlyTiers\": [\n   \"internal\",\n   \"key_client\",\n   \"client\",\n   \"prospect\"\n  ],\n  \"ignoreCategories\": [\n   \"Low Priority / Noise\",\n   \"Unclassified\"\n  ],\n  \"threadAware\": true,\n  \"$comment_threadAware\": \"STL-03: any inbound on the same conversation counts as an answer, no matter who sent it.\"\n },\n \"learning\": {\n  \"startWeight\": 0.5,\n  \"minWeight\": 0,\n  \"maxWeight\": 1,\n  \"deleteUnreadDelta\": -0.06,\n  \"deleteReadDelta\": -0.03,\n  \"archiveUnreadDelta\": -0.02,\n  \"fastReplyDelta\": 0.08,\n  \"fastReplyMinutes\": 15,\n  \"openedNoReplyDelta\": 0.01,\n  \"singleActionCap\": 0.02,\n  \"$comment_singleActionCap\": \"LRN-03 overfitting guard. Any sender sitting on a tier with a weight floor gets its per-action movement clamped to this, and can never be pushed below the floor. One delete cannot knock a key client down.\",\n  \"dampenedTiers\": [\n   \"internal\",\n   \"key_client\"\n  ],\n  \"minActionsBeforeTierChange\": 8\n },\n \"dailySummary\": {\n  \"sendAt\": \"07:00\",\n  \"windowHours\": 24,\n  \"sections\": [\n   \"New Opportunities\",\n   \"Critical Deadlines\",\n   \"High-Priority Comms\",\n   \"Outstanding Follow-ups\",\n   \"Awaiting Decision\"\n  ],\n  \"emptySectionText\": \"None.\",\n  \"criticalDeadlineHorizonDays\": 60,\n  \"$comment_criticalDeadlineHorizonDays\": \"SUMX-02 sets the floor on this. CLS-01 arrives 2026-01-15 with a 2026-02-14 bid date, 30 days out, and the spec requires that date under Critical Deadlines the same day. So the horizon has to clear a normal bid cycle. It exists only to keep an absurd far-future date out of the brief.\"\n },\n \"integration\": {\n  \"approvalGate\": \"required\",\n  \"$comment_approvalGate\": \"INT-03 red line. 'required' means every outbound write to Pipedrive, SharePoint or the R: drive is queued as a pending intent and logged as a dry run. Nothing hits a live system until a human clears it. Do not set this to 'off'.\",\n  \"dryRunLog\": \"logs/intended-writes.jsonl\",\n  \"dedupeKey\": \"internetMessageId\",\n  \"targets\": {\n   \"pipedrive\": {\n    \"enabled\": false,\n    \"reason\": \"awaiting API token\"\n   },\n   \"sharepoint\": {\n    \"enabled\": false,\n    \"reason\": \"awaiting site + drive id\"\n   },\n   \"rdrive\": {\n    \"enabled\": false,\n    \"reason\": \"awaiting UNC path\"\n   }\n  }\n },\n \"drafts\": {\n  \"createFor\": [\n   \"New Opportunity\",\n   \"Opportunity Update\",\n   \"Active Project\",\n   \"Compliance & Docs\",\n   \"Client & Network\"\n  ],\n  \"neverCreateFor\": [\n   \"Low Priority / Noise\",\n   \"Unclassified\",\n   \"Bid Outcome\"\n  ],\n  \"$comment_neverCreateFor\": \"Bid Outcome is off the auto-draft list on purpose. An award or a loss is a message Alex answers himself.\",\n  \"saveAsDraftOnly\": true,\n  \"maxWords\": 150\n }\n};\nconst contacts = {\n \"$comment\": \"Priority tier lookup. This table is the ONLY thing allowed to set priority_tier. The classifier and extractor never see it and never emit a tier field. Suite 3 red line: 'Any priority tier set by the LLM instead of the contacts lookup' is a ship blocker, so tier() is pure data lookup with no model in the path. Addresses below are the spec placeholders; swap them for the real AOG contact list before go-live and the fixtures still run.\",\n \"$comment_weights\": \"startWeight is where a sender begins on the learning loop. weightFloor is how far the loop is allowed to push it down, ever. The gap between the two is the room a tier has to move, which is why key_client has room to drift a little but can never fall through the floor into vendor territory.\",\n \"tiers\": {\n  \"internal\": {\n   \"rank\": 0,\n   \"startWeight\": 0.9,\n   \"weightFloor\": 0.8,\n   \"label\": \"Alpha Omega Geotech staff\"\n  },\n  \"key_client\": {\n   \"rank\": 1,\n   \"startWeight\": 0.8,\n   \"weightFloor\": 0.7,\n   \"label\": \"Named key client or key GC\"\n  },\n  \"client\": {\n   \"rank\": 2,\n   \"startWeight\": 0.65,\n   \"weightFloor\": 0.5,\n   \"label\": \"Active or past client\"\n  },\n  \"prospect\": {\n   \"rank\": 3,\n   \"startWeight\": 0.5,\n   \"weightFloor\": 0.4,\n   \"label\": \"Known prospect, no work yet\"\n  },\n  \"vendor\": {\n   \"rank\": 4,\n   \"startWeight\": 0.3,\n   \"weightFloor\": 0.2,\n   \"label\": \"Supplier or service vendor\"\n  },\n  \"unknown\": {\n   \"rank\": 5,\n   \"startWeight\": 0.5,\n   \"weightFloor\": 0.3,\n   \"label\": \"Not in the contacts table\"\n  }\n },\n \"defaultTier\": \"unknown\",\n \"byAddress\": {\n  \"pm@gc-example.com\": \"key_client\",\n  \"estimator@gc-example.com\": \"key_client\",\n  \"subcontracts@gc-example.com\": \"key_client\",\n  \"garic@alphaomega-example.com\": \"internal\",\n  \"principal@arch-example.com\": \"key_client\",\n  \"news@arch-example.com\": \"key_client\",\n  \"purchasing@example-isd.org\": \"client\",\n  \"contracts@city-example.gov\": \"client\",\n  \"purchasing@city-example.gov\": \"client\",\n  \"purchasing@county-example.gov\": \"prospect\",\n  \"civil@example-eng.com\": \"client\",\n  \"developer@example-dev.com\": \"prospect\",\n  \"news@drillrig-vendor.com\": \"vendor\"\n },\n \"byDomain\": {\n  \"alphaomega-example.com\": \"internal\",\n  \"aogeotech.com\": \"internal\"\n }\n};\n\n/**\n * Project-assistant integration. Suite 9.\n *\n * Two things this has to get right, and both are red lines:\n *   INT-02  the same message processed twice produces one record, never two\n *   INT-03  nothing reaches Pipedrive, SharePoint or the R: drive without a human clearing it\n *\n * So the sink never writes. It builds an *intent*, records it in the dry-run log, and parks\n * it. A live write only happens inside approve(), and only when an approver is named. The\n * live writer is injected, which means the default configuration cannot touch a real system\n * even by accident: with no writer wired up, approve() records the approval and stops.\n */\n\nconst normalizeProject = (name) =>\n\tString(name ?? '')\n\t\t.trim()\n\t\t.toLowerCase()\n\t\t.replace(/\\s+/g, ' ');\n\nlet counter = 0;\nconst nextId = () => `intent_${++counter}`;\n\nclass ProjectAssistantSink {\n\t/**\n\t * @param {object} [opts]\n\t * @param {(intent: object) => Promise<object>} [opts.liveWriter] only ever called from approve()\n\t * @param {'required'|'off'} [opts.approvalGate]\n\t */\n\tconstructor(opts = {}) {\n\t\tthis.liveWriter = opts.liveWriter ?? null;\n\t\tthis.approvalGate = opts.approvalGate ?? settings.integration.approvalGate;\n\t\tthis.dedupeKey = opts.dedupeKey ?? settings.integration.dedupeKey;\n\n\t\t/** @type {Map<string, object>} project records, keyed by normalized project name */\n\t\tthis.records = new Map();\n\t\t/** @type {Set<string>} message ids already consumed */\n\t\tthis.seenMessages = new Set();\n\t\t/** @type {object[]} intents waiting on a human */\n\t\tthis.pending = [];\n\t\t/** @type {object[]} everything we intended to write, approved or not */\n\t\tthis.dryRunLog = [];\n\t\t/** @type {object[]} intents that actually reached a live system */\n\t\tthis.applied = [];\n\t}\n\n\t/**\n\t * Take a processed email and stage a record update.\n\t *\n\t * @param {object} input\n\t * @param {object} input.email     needs the dedupe key, normally internetMessageId\n\t * @param {string} input.category\n\t * @param {object} input.extracted\n\t * @param {object} [input.tier]\n\t * @returns {{status: 'queued'|'duplicate'|'skipped', intent: object|null, reason?: string}}\n\t */\n\tsubmit({ email, category, extracted, tier }) {\n\t\tconst messageId = email?.[this.dedupeKey] ?? email?.id ?? null;\n\n\t\tif (!messageId) {\n\t\t\treturn { status: 'skipped', intent: null, reason: `no ${this.dedupeKey} on the message` };\n\t\t}\n\n\t\tif (this.seenMessages.has(messageId)) {\n\t\t\t// INT-02. Idempotency is on the message, not on the record, so a replayed\n\t\t\t// execution or a webhook redelivery cannot double-write.\n\t\t\treturn { status: 'duplicate', intent: null, reason: `${messageId} already processed` };\n\t\t}\n\n\t\tconst projectName = extracted?.project_name ?? null;\n\t\tif (!projectName) {\n\t\t\tthis.seenMessages.add(messageId);\n\t\t\treturn { status: 'skipped', intent: null, reason: 'no project name to key a record on' };\n\t\t}\n\n\t\tconst key = normalizeProject(projectName);\n\t\tconst existing = this.records.get(key) ?? null;\n\n\t\tconst fields = {\n\t\t\tproject_name: projectName,\n\t\t\tproject_stage: extracted.project_stage ?? null,\n\t\t\tclient_name: extracted.client_name ?? null,\n\t\t\tbid_reference: extracted.bid_reference ?? null,\n\t\t\tdue_date: extracted.due_date ?? null,\n\t\t\tlast_email_category: category,\n\t\t\tlast_email_id: messageId,\n\t\t\tpriority_tier: tier?.priority_tier ?? null,\n\t\t};\n\n\t\tconst intent = {\n\t\t\tid: nextId(),\n\t\t\top: existing ? 'update' : 'create',\n\t\t\ttarget: 'project_assistant',\n\t\t\trecord_key: key,\n\t\t\tmessage_id: messageId,\n\t\t\tfields,\n\t\t\tapproval: this.approvalGate === 'required' ? 'pending' : 'not_required',\n\t\t\tapproved_by: null,\n\t\t\tcreated_at: new Date().toISOString(),\n\t\t};\n\n\t\t// The record in this.records is the pipeline's own view, not a live system. It is\n\t\t// what lets INT-01 assert the record carries the project name and stage without\n\t\t// anything having been written outward.\n\t\tthis.records.set(key, { ...(existing ?? {}), ...stripNulls(fields), record_key: key });\n\t\tthis.seenMessages.add(messageId);\n\n\t\tthis.dryRunLog.push({ ...intent, dry_run: true });\n\n\t\tif (this.approvalGate === 'required') {\n\t\t\tthis.pending.push(intent);\n\t\t\treturn { status: 'queued', intent };\n\t\t}\n\n\t\tthis.applied.push(intent);\n\t\treturn { status: 'queued', intent };\n\t}\n\n\tgetRecord(projectName) {\n\t\treturn this.records.get(normalizeProject(projectName)) ?? null;\n\t}\n\n\tget recordCount() {\n\t\treturn this.records.size;\n\t}\n\n\t/**\n\t * Clear the gate on one intent. This is the only path to a live system.\n\t * @param {string} intentId\n\t * @param {string} approver\n\t */\n\tasync approve(intentId, approver) {\n\t\tif (!approver) throw new Error('approve() needs a named approver');\n\n\t\tconst index = this.pending.findIndex((i) => i.id === intentId);\n\t\tif (index === -1) throw new Error(`no pending intent ${intentId}`);\n\n\t\tconst [intent] = this.pending.splice(index, 1);\n\t\tintent.approval = 'approved';\n\t\tintent.approved_by = approver;\n\t\tintent.approved_at = new Date().toISOString();\n\n\t\tlet result = null;\n\t\tif (this.liveWriter) {\n\t\t\tresult = await this.liveWriter(intent);\n\t\t}\n\n\t\tthis.applied.push(intent);\n\t\treturn { intent, result, wrote: Boolean(this.liveWriter) };\n\t}\n\n\treject(intentId, approver, reason) {\n\t\tconst index = this.pending.findIndex((i) => i.id === intentId);\n\t\tif (index === -1) throw new Error(`no pending intent ${intentId}`);\n\t\tconst [intent] = this.pending.splice(index, 1);\n\t\tintent.approval = 'rejected';\n\t\tintent.approved_by = approver ?? null;\n\t\tintent.reason = reason ?? null;\n\t\treturn intent;\n\t}\n}\n\nfunction stripNulls(obj) {\n\treturn Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== null && v !== undefined));\n}\n\nconst _internals = { normalizeProject };\n\n// INT-03 RED LINE. No live writer is attached here on purpose, so this node cannot reach\n// Pipedrive, SharePoint or the R: drive no matter what it is fed. It builds the intended\n// write, logs it, and parks it for approval. Wire the live writer only behind sign-off.\nconst seen = $getWorkflowStaticData('global');\nseen.processedMessageIds ??= [];\n\nconst sink = new ProjectAssistantSink();\nfor (const messageId of seen.processedMessageIds) sink.seenMessages.add(messageId);\n\nconst out = [];\n\nfor (const item of $input.all()) {\n  const { json } = item;\n  const result = sink.submit({\n    email: { internetMessageId: json.internetMessageId },\n    category: json.category,\n    extracted: json.extracted,\n    tier: json.tier,\n  });\n\n  if (result.status !== 'duplicate') seen.processedMessageIds.push(json.internetMessageId);\n\n  out.push({ json: { ...json, integration: result, dry_run_log: sink.dryRunLog } });\n}\n\n// Keep the dedupe list from growing without bound.\nseen.processedMessageIds = seen.processedMessageIds.slice(-5000);\n\nreturn out;"
+      },
+      "id": "aog-027",
+      "name": "Stage Project Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1860,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Routing, tier, extraction, draft\n\nOrder matters and is not cosmetic.\n\n**Priority Tier Lookup runs before the classifier.** The tier is a contacts-table fact and no model touches it. Suite 3 red line.\n\n**One Set node per bin.** n8n merges every connection into input 0, so the branch identity has to be stamped before the streams rejoin.\n\n**Save Reply Draft uses saveAsDraft.** Nothing here sends mail.\n\n**Stage Project Record has no live writer.** It logs the intended write and parks it. Suite 9 INT-03.\n\nGenerated by `node bin/build-workflows.mjs`. Edit `src/` and `config/`, not this file.",
+        "width": 600,
+        "height": 420
+      },
+      "id": "aog-029",
+      "name": "Note aog-028",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -460,
+        -180
+      ]
+    }
+  ],
+  "connections": {
+    "Classifier Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Text Classifier",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inbox Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Message": {
+      "main": [
+        [
+          {
+            "node": "Priority Tier Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Priority Tier Lookup": {
+      "main": [
+        [
+          {
+            "node": "Text Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Classifier": {
+      "main": [
+        [
+          {
+            "node": "Bin: Bid Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bin: Opportunity Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bin: New Opportunity",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bin: Active Project",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bin: Compliance & Docs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bin: Internal / Team",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bin: Client & Network",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bin: Low Priority / Noise",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bin: Unclassified",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bin: Bid Outcome": {
+      "main": [
+        [
+          {
+            "node": "Routed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bin: Opportunity Update": {
+      "main": [
+        [
+          {
+            "node": "Routed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bin: New Opportunity": {
+      "main": [
+        [
+          {
+            "node": "Routed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bin: Active Project": {
+      "main": [
+        [
+          {
+            "node": "Routed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bin: Compliance & Docs": {
+      "main": [
+        [
+          {
+            "node": "Routed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bin: Internal / Team": {
+      "main": [
+        [
+          {
+            "node": "Routed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bin: Client & Network": {
+      "main": [
+        [
+          {
+            "node": "Routed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bin: Low Priority / Noise": {
+      "main": [
+        [
+          {
+            "node": "Routed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bin: Unclassified": {
+      "main": [
+        [
+          {
+            "node": "Routed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Routed": {
+      "main": [
+        [
+          {
+            "node": "Move To Folder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extractor Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Information Extractor",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move To Folder": {
+      "main": [
+        [
+          {
+            "node": "Information Extractor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Information Extractor": {
+      "main": [
+        [
+          {
+            "node": "Merge Facts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Facts": {
+      "main": [
+        [
+          {
+            "node": "Needs A Reply?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Write Draft",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs A Reply?": {
+      "main": [
+        [
+          {
+            "node": "Write Draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage Project Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Draft": {
+      "main": [
+        [
+          {
+            "node": "Lint Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lint Draft": {
+      "main": [
+        [
+          {
+            "node": "Draft Clean?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Stage Project Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Clean?": {
+      "main": [
+        [
+          {
+            "node": "Save Reply Draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Flag Draft For Human",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [
+    {
+      "name": "AOG Email Agent"
+    }
+  ]
+}

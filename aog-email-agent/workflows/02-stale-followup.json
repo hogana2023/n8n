@@ -1,0 +1,218 @@
+{
+  "name": "AOG Email Agent, Stale Follow-up",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "aog-030",
+      "name": "Every Weekday Morning",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": true,
+        "filtersUI": {
+          "values": {
+            "filters": {
+              "custom": "receivedDateTime ge {{ new Date(Date.now() - 45 * 86400000).toISOString() }}"
+            }
+          }
+        },
+        "output": "fields",
+        "fields": [
+          "id",
+          "conversationId",
+          "subject",
+          "from",
+          "toRecipients",
+          "sentDateTime",
+          "receivedDateTime"
+        ]
+      },
+      "id": "aog-031",
+      "name": "Recent Sent Mail",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        -180,
+        200
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Microsoft Outlook account"
+        }
+      },
+      "notes": "Point this at the Sent Items folder."
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": true,
+        "filtersUI": {
+          "values": {
+            "filters": {
+              "custom": "receivedDateTime ge {{ new Date(Date.now() - 45 * 86400000).toISOString() }}"
+            }
+          }
+        },
+        "output": "fields",
+        "fields": [
+          "id",
+          "conversationId",
+          "subject",
+          "from",
+          "receivedDateTime"
+        ]
+      },
+      "id": "aog-032",
+      "name": "Recent Received Mail",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        -180,
+        400
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const settings = {\n \"$comment\": \"Operational knobs. Anything the spec called a placeholder is marked PLACEHOLDER and needs a real value from Alex before go-live.\",\n \"mailbox\": {\n  \"address\": \"PLACEHOLDER_MAILBOX_ADDRESS\",\n  \"owner\": \"Alex\",\n  \"signOff\": \"Alex\",\n  \"company\": \"Alpha Omega Geotech\",\n  \"companyShort\": \"AOG\",\n  \"timezone\": \"America/Chicago\"\n },\n \"llm\": {\n  \"provider\": \"anthropic\",\n  \"classifierModel\": \"claude-sonnet-5\",\n  \"extractorModel\": \"claude-sonnet-5\",\n  \"summaryModel\": \"claude-sonnet-5\",\n  \"draftModel\": \"claude-opus-5\",\n  \"temperature\": 0,\n  \"maxTokens\": 2048,\n  \"$comment\": \"Temperature 0 on classifier and extractor per the spec's drift note. Draft generation is the one place a hair of variation is fine, but it runs at 0 too so the three-pass fixture check stays honest.\"\n },\n \"staleFollowUp\": {\n  \"thresholdDays\": 5,\n  \"$comment_thresholdDays\": \"PLACEHOLDER. Spec STL-01/02 assume 5. Confirm the real number with Alex.\",\n  \"businessDaysOnly\": false,\n  \"$comment_businessDaysOnly\": \"OPEN QUESTION. Left off so STL-01 counts days the way the spec writes them (day 0 to day 6 is 6). Turn it on and a Friday send would not surface until the following Friday, which is probably what a person actually wants. Alex decides.\",\n  \"onlyTiers\": [\n   \"internal\",\n   \"key_client\",\n   \"client\",\n   \"prospect\"\n  ],\n  \"ignoreCategories\": [\n   \"Low Priority / Noise\",\n   \"Unclassified\"\n  ],\n  \"threadAware\": true,\n  \"$comment_threadAware\": \"STL-03: any inbound on the same conversation counts as an answer, no matter who sent it.\"\n },\n \"learning\": {\n  \"startWeight\": 0.5,\n  \"minWeight\": 0,\n  \"maxWeight\": 1,\n  \"deleteUnreadDelta\": -0.06,\n  \"deleteReadDelta\": -0.03,\n  \"archiveUnreadDelta\": -0.02,\n  \"fastReplyDelta\": 0.08,\n  \"fastReplyMinutes\": 15,\n  \"openedNoReplyDelta\": 0.01,\n  \"singleActionCap\": 0.02,\n  \"$comment_singleActionCap\": \"LRN-03 overfitting guard. Any sender sitting on a tier with a weight floor gets its per-action movement clamped to this, and can never be pushed below the floor. One delete cannot knock a key client down.\",\n  \"dampenedTiers\": [\n   \"internal\",\n   \"key_client\"\n  ],\n  \"minActionsBeforeTierChange\": 8\n },\n \"dailySummary\": {\n  \"sendAt\": \"07:00\",\n  \"windowHours\": 24,\n  \"sections\": [\n   \"New Opportunities\",\n   \"Critical Deadlines\",\n   \"High-Priority Comms\",\n   \"Outstanding Follow-ups\",\n   \"Awaiting Decision\"\n  ],\n  \"emptySectionText\": \"None.\",\n  \"criticalDeadlineHorizonDays\": 60,\n  \"$comment_criticalDeadlineHorizonDays\": \"SUMX-02 sets the floor on this. CLS-01 arrives 2026-01-15 with a 2026-02-14 bid date, 30 days out, and the spec requires that date under Critical Deadlines the same day. So the horizon has to clear a normal bid cycle. It exists only to keep an absurd far-future date out of the brief.\"\n },\n \"integration\": {\n  \"approvalGate\": \"required\",\n  \"$comment_approvalGate\": \"INT-03 red line. 'required' means every outbound write to Pipedrive, SharePoint or the R: drive is queued as a pending intent and logged as a dry run. Nothing hits a live system until a human clears it. Do not set this to 'off'.\",\n  \"dryRunLog\": \"logs/intended-writes.jsonl\",\n  \"dedupeKey\": \"internetMessageId\",\n  \"targets\": {\n   \"pipedrive\": {\n    \"enabled\": false,\n    \"reason\": \"awaiting API token\"\n   },\n   \"sharepoint\": {\n    \"enabled\": false,\n    \"reason\": \"awaiting site + drive id\"\n   },\n   \"rdrive\": {\n    \"enabled\": false,\n    \"reason\": \"awaiting UNC path\"\n   }\n  }\n },\n \"drafts\": {\n  \"createFor\": [\n   \"New Opportunity\",\n   \"Opportunity Update\",\n   \"Active Project\",\n   \"Compliance & Docs\",\n   \"Client & Network\"\n  ],\n  \"neverCreateFor\": [\n   \"Low Priority / Noise\",\n   \"Unclassified\",\n   \"Bid Outcome\"\n  ],\n  \"$comment_neverCreateFor\": \"Bid Outcome is off the auto-draft list on purpose. An award or a loss is a message Alex answers himself.\",\n  \"saveAsDraftOnly\": true,\n  \"maxWords\": 150\n }\n};\nconst contacts = {\n \"$comment\": \"Priority tier lookup. This table is the ONLY thing allowed to set priority_tier. The classifier and extractor never see it and never emit a tier field. Suite 3 red line: 'Any priority tier set by the LLM instead of the contacts lookup' is a ship blocker, so tier() is pure data lookup with no model in the path. Addresses below are the spec placeholders; swap them for the real AOG contact list before go-live and the fixtures still run.\",\n \"$comment_weights\": \"startWeight is where a sender begins on the learning loop. weightFloor is how far the loop is allowed to push it down, ever. The gap between the two is the room a tier has to move, which is why key_client has room to drift a little but can never fall through the floor into vendor territory.\",\n \"tiers\": {\n  \"internal\": {\n   \"rank\": 0,\n   \"startWeight\": 0.9,\n   \"weightFloor\": 0.8,\n   \"label\": \"Alpha Omega Geotech staff\"\n  },\n  \"key_client\": {\n   \"rank\": 1,\n   \"startWeight\": 0.8,\n   \"weightFloor\": 0.7,\n   \"label\": \"Named key client or key GC\"\n  },\n  \"client\": {\n   \"rank\": 2,\n   \"startWeight\": 0.65,\n   \"weightFloor\": 0.5,\n   \"label\": \"Active or past client\"\n  },\n  \"prospect\": {\n   \"rank\": 3,\n   \"startWeight\": 0.5,\n   \"weightFloor\": 0.4,\n   \"label\": \"Known prospect, no work yet\"\n  },\n  \"vendor\": {\n   \"rank\": 4,\n   \"startWeight\": 0.3,\n   \"weightFloor\": 0.2,\n   \"label\": \"Supplier or service vendor\"\n  },\n  \"unknown\": {\n   \"rank\": 5,\n   \"startWeight\": 0.5,\n   \"weightFloor\": 0.3,\n   \"label\": \"Not in the contacts table\"\n  }\n },\n \"defaultTier\": \"unknown\",\n \"byAddress\": {\n  \"pm@gc-example.com\": \"key_client\",\n  \"estimator@gc-example.com\": \"key_client\",\n  \"subcontracts@gc-example.com\": \"key_client\",\n  \"garic@alphaomega-example.com\": \"internal\",\n  \"principal@arch-example.com\": \"key_client\",\n  \"news@arch-example.com\": \"key_client\",\n  \"purchasing@example-isd.org\": \"client\",\n  \"contracts@city-example.gov\": \"client\",\n  \"purchasing@city-example.gov\": \"client\",\n  \"purchasing@county-example.gov\": \"prospect\",\n  \"civil@example-eng.com\": \"client\",\n  \"developer@example-dev.com\": \"prospect\",\n  \"news@drillrig-vendor.com\": \"vendor\"\n },\n \"byDomain\": {\n  \"alphaomega-example.com\": \"internal\",\n  \"aogeotech.com\": \"internal\"\n }\n};\n\n/**\n * Priority tier lookup.\n *\n * Spec red line: \"Any priority tier set by the LLM instead of the contacts lookup\" is a\n * ship blocker. So there is no model anywhere in this file and there never should be.\n * Address match wins over domain match, and a miss returns the default tier with\n * tier_source 'default' so the caller can tell a real lookup from a fallback.\n *\n * Suite 3 cases: PRI-01 address hit, PRI-02 miss, PRI-03 internal hit, PRI-04 the split\n * where content routed the message to Noise but the tier stays whatever the table says.\n */\n\nconst normalize = (address) => String(address ?? '').trim().toLowerCase();\n\n/** Pulls the address out of \"Name <addr@host>\" or a bare address. */\nfunction parseAddress(input) {\n\tconst raw = normalize(input);\n\tconst angled = raw.match(/<([^>]+)>/);\n\treturn angled ? angled[1].trim() : raw;\n}\n\nfunction domainOf(address) {\n\tconst at = parseAddress(address).lastIndexOf('@');\n\treturn at === -1 ? '' : parseAddress(address).slice(at + 1);\n}\n\n/**\n * @param {string} fromAddress\n * @returns {{priority_tier: string, tier_source: 'lookup'|'default', tier_rank: number, weight_floor: number, matched_on: 'address'|'domain'|null}}\n */\nfunction lookupTier(fromAddress) {\n\tconst address = parseAddress(fromAddress);\n\tconst domain = domainOf(address);\n\n\tlet tier = null;\n\tlet matchedOn = null;\n\n\tif (address && Object.hasOwn(contacts.byAddress, address)) {\n\t\ttier = contacts.byAddress[address];\n\t\tmatchedOn = 'address';\n\t} else if (domain && Object.hasOwn(contacts.byDomain, domain)) {\n\t\ttier = contacts.byDomain[domain];\n\t\tmatchedOn = 'domain';\n\t}\n\n\tconst source = tier ? 'lookup' : 'default';\n\tconst resolved = tier ?? contacts.defaultTier;\n\tconst meta = contacts.tiers[resolved];\n\n\tif (!meta) {\n\t\tthrow new Error(`contacts.json maps ${address} to unknown tier \"${resolved}\"`);\n\t}\n\n\treturn {\n\t\tpriority_tier: resolved,\n\t\ttier_source: source,\n\t\ttier_rank: meta.rank,\n\t\tweight_floor: meta.weightFloor,\n\t\tmatched_on: matchedOn,\n\t};\n}\n\n/**\n * Strips any tier-shaped field a model tried to emit. Called on every extractor result\n * before the tier lookup is merged in, so a hallucinated tier can never reach a record.\n */\nconst MODEL_TIER_FIELDS = [\n\t'priority_tier',\n\t'tier',\n\t'tier_source',\n\t'priority',\n\t'importance',\n\t'urgency',\n\t'weight',\n];\n\nfunction stripModelTier(extracted) {\n\tconst clean = { ...extracted };\n\tconst removed = [];\n\tfor (const field of MODEL_TIER_FIELDS) {\n\t\tif (field in clean) {\n\t\t\tremoved.push(field);\n\t\t\tdelete clean[field];\n\t\t}\n\t}\n\treturn { clean, removed };\n}\n\n/**\n * Stale follow-up detection. Suite 6.\n *\n * Runs on a timer against sent-versus-received state, not on the classifier. The rule is\n * per thread, never per message: the last thing AOG sent is stale when nothing has come\n * back on that conversation since, and enough time has passed.\n *\n * STL-03 is the case that decides the shape of this. A reply from a different person on\n * the same thread answers the thread. Matching on the original recipient's address would\n * nag a conversation that already moved, so matching is on conversation id only.\n */\n\nconst DAY_MS = 86_400_000;\n\nconst toTime = (value) => (value instanceof Date ? value.getTime() : new Date(value).getTime());\n\n/** Whole days between two instants, counting Mon-Fri only when asked. */\nfunction daysBetween(from, to, businessDaysOnly = false) {\n\tconst start = toTime(from);\n\tconst end = toTime(to);\n\tif (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;\n\n\tif (!businessDaysOnly) return Math.floor((end - start) / DAY_MS);\n\n\tlet count = 0;\n\tfor (let t = start + DAY_MS; t <= end; t += DAY_MS) {\n\t\tconst day = new Date(t).getUTCDay();\n\t\tif (day !== 0 && day !== 6) count++;\n\t}\n\treturn count;\n}\n\n/**\n * @typedef {object} MailEvent\n * @property {string} threadId      conversation id from the mail store\n * @property {'inbound'|'outbound'} direction\n * @property {string} [from]\n * @property {string} [to]\n * @property {string|Date} date\n * @property {string} [subject]\n * @property {string} [category]\n * @property {string} [priority_tier]\n */\n\n/**\n * @param {MailEvent[]} events\n * @param {object} [opts]\n * @param {string|Date} [opts.now]\n * @param {number} [opts.thresholdDays]\n * @param {boolean} [opts.businessDaysOnly]\n * @param {string[]} [opts.ignoreCategories]\n * @param {string[]} [opts.onlyTiers]\n * @returns {{surfaced: Array<object>, evaluated: Array<object>}}\n */\nfunction findStaleThreads(events, opts = {}) {\n\tconst cfg = settings.staleFollowUp;\n\tconst now = opts.now ? toTime(opts.now) : Date.now();\n\tconst thresholdDays = opts.thresholdDays ?? cfg.thresholdDays;\n\tconst businessDaysOnly = opts.businessDaysOnly ?? cfg.businessDaysOnly;\n\tconst ignoreCategories = new Set(opts.ignoreCategories ?? cfg.ignoreCategories ?? []);\n\tconst onlyTiers = opts.onlyTiers ?? cfg.onlyTiers ?? null;\n\n\t/** @type {Map<string, MailEvent[]>} */\n\tconst threads = new Map();\n\tfor (const event of events) {\n\t\tconst key = event.threadId ?? `__no-thread__${threads.size}`;\n\t\tif (!threads.has(key)) threads.set(key, []);\n\t\tthreads.get(key).push(event);\n\t}\n\n\tconst evaluated = [];\n\n\tfor (const [threadId, raw] of threads) {\n\t\tconst messages = [...raw].sort((a, b) => toTime(a.date) - toTime(b.date));\n\t\tconst outbound = messages.filter((m) => m.direction === 'outbound');\n\t\tif (outbound.length === 0) continue;\n\n\t\tconst lastOutbound = outbound.at(-1);\n\t\tconst sentAt = toTime(lastOutbound.date);\n\n\t\t// Thread-aware: ANY inbound after the last outbound answers it, whoever sent it.\n\t\tconst answeredBy = messages.find((m) => m.direction === 'inbound' && toTime(m.date) > sentAt);\n\n\t\tconst category = lastOutbound.category ?? messages.at(-1)?.category ?? null;\n\t\tconst tier = lastOutbound.priority_tier ?? messages.at(-1)?.priority_tier ?? null;\n\n\t\tconst elapsedDays = daysBetween(sentAt, now, businessDaysOnly);\n\n\t\tlet surfaced = true;\n\t\tlet reason = 'no reply past threshold';\n\n\t\tif (answeredBy) {\n\t\t\tsurfaced = false;\n\t\t\treason = `answered on ${new Date(toTime(answeredBy.date)).toISOString().slice(0, 10)} by ${parseAddress(answeredBy.from) || 'someone on the thread'}`;\n\t\t} else if (elapsedDays < thresholdDays) {\n\t\t\tsurfaced = false;\n\t\t\treason = `only ${elapsedDays} day(s) elapsed, threshold ${thresholdDays}`;\n\t\t} else if (category && ignoreCategories.has(category)) {\n\t\t\tsurfaced = false;\n\t\t\treason = `category ${category} is not chased`;\n\t\t} else if (onlyTiers && tier && !onlyTiers.includes(tier)) {\n\t\t\tsurfaced = false;\n\t\t\treason = `tier ${tier} is not chased`;\n\t\t}\n\n\t\tevaluated.push({\n\t\t\tthreadId,\n\t\t\tsubject: lastOutbound.subject ?? messages.at(-1)?.subject ?? null,\n\t\t\tto: lastOutbound.to ?? null,\n\t\t\tlast_outbound_at: new Date(sentAt).toISOString(),\n\t\t\telapsed_days: elapsedDays,\n\t\t\tthreshold_days: thresholdDays,\n\t\t\tcategory,\n\t\t\tpriority_tier: tier,\n\t\t\tsurfaced,\n\t\t\treason,\n\t\t});\n\t}\n\n\tevaluated.sort((a, b) => b.elapsed_days - a.elapsed_days);\n\n\treturn { surfaced: evaluated.filter((t) => t.surfaced), evaluated };\n}\n\n// STL-03. Matching is on conversationId alone, so a reply from anyone on the thread counts\n// as an answer. Matching on the original recipient would nag threads that already moved.\nconst events = [];\n\nfor (const item of $('Recent Sent Mail').all()) {\n  const m = item.json;\n  events.push({\n    threadId: m.conversationId,\n    direction: 'outbound',\n    to: (m.toRecipients ?? []).map((r) => r.emailAddress?.address).filter(Boolean).join(', '),\n    subject: m.subject,\n    date: m.sentDateTime ?? m.receivedDateTime,\n  });\n}\n\nfor (const item of $('Recent Received Mail').all()) {\n  const m = item.json;\n  events.push({\n    threadId: m.conversationId,\n    direction: 'inbound',\n    from: m.from?.emailAddress?.address ?? '',\n    subject: m.subject,\n    date: m.receivedDateTime,\n  });\n}\n\nconst { surfaced, evaluated } = findStaleThreads(events, { now: new Date().toISOString() });\n\nreturn surfaced.length\n  ? surfaced.map((thread) => ({ json: thread }))\n  : [{ json: { none: true, evaluated: evaluated.length } }];"
+      },
+      "id": "aog-033",
+      "name": "Find Stale Threads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        60,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "operation": "create",
+        "subject": "=Stale follow-ups, {{ $now.format(\"yyyy-LL-dd\") }}",
+        "bodyContent": "={{ $json.none ? \"Nothing has gone unanswered past the threshold.\" : $input.all().map(i => \"- \" + (i.json.to || \"unknown\") + \", \" + i.json.elapsed_days + \" days: \" + (i.json.subject || \"(no subject)\")).join(\"\\n\") }}",
+        "additionalFields": {
+          "bodyContentType": "Text"
+        }
+      },
+      "id": "aog-034",
+      "name": "Draft The Nudge List",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "REPLACE_ME",
+          "name": "Microsoft Outlook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Stale follow-up\n\nThreshold is **5 days** and is a placeholder. Confirm the real one.\n\nThread-aware by conversationId: a reply from anyone on the thread answers it (STL-03).\n\nOutput is a draft, not a send.",
+        "width": 460,
+        "height": 260
+      },
+      "id": "aog-036",
+      "name": "Note aog-035",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Every Weekday Morning": {
+      "main": [
+        [
+          {
+            "node": "Recent Sent Mail",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Recent Received Mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recent Sent Mail": {
+      "main": [
+        [
+          {
+            "node": "Find Stale Threads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recent Received Mail": {
+      "main": [
+        [
+          {
+            "node": "Find Stale Threads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Stale Threads": {
+      "main": [
+        [
+          {
+            "node": "Draft The Nudge List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [
+    {
+      "name": "AOG Email Agent"
+    }
+  ]
+}

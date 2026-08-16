@@ -1,0 +1,32 @@
+{
+  "$comment": "Priority tier lookup. This table is the ONLY thing allowed to set priority_tier. The classifier and extractor never see it and never emit a tier field. Suite 3 red line: 'Any priority tier set by the LLM instead of the contacts lookup' is a ship blocker, so tier() is pure data lookup with no model in the path. Addresses below are the spec placeholders; swap them for the real AOG contact list before go-live and the fixtures still run.",
+  "$comment_weights": "startWeight is where a sender begins on the learning loop. weightFloor is how far the loop is allowed to push it down, ever. The gap between the two is the room a tier has to move, which is why key_client has room to drift a little but can never fall through the floor into vendor territory.",
+  "tiers": {
+    "internal": { "rank": 0, "startWeight": 0.9, "weightFloor": 0.8, "label": "Alpha Omega Geotech staff" },
+    "key_client": { "rank": 1, "startWeight": 0.8, "weightFloor": 0.7, "label": "Named key client or key GC" },
+    "client": { "rank": 2, "startWeight": 0.65, "weightFloor": 0.5, "label": "Active or past client" },
+    "prospect": { "rank": 3, "startWeight": 0.5, "weightFloor": 0.4, "label": "Known prospect, no work yet" },
+    "vendor": { "rank": 4, "startWeight": 0.3, "weightFloor": 0.2, "label": "Supplier or service vendor" },
+    "unknown": { "rank": 5, "startWeight": 0.5, "weightFloor": 0.3, "label": "Not in the contacts table" }
+  },
+  "defaultTier": "unknown",
+  "byAddress": {
+    "pm@gc-example.com": "key_client",
+    "estimator@gc-example.com": "key_client",
+    "subcontracts@gc-example.com": "key_client",
+    "garic@alphaomega-example.com": "internal",
+    "principal@arch-example.com": "key_client",
+    "news@arch-example.com": "key_client",
+    "purchasing@example-isd.org": "client",
+    "contracts@city-example.gov": "client",
+    "purchasing@city-example.gov": "client",
+    "purchasing@county-example.gov": "prospect",
+    "civil@example-eng.com": "client",
+    "developer@example-dev.com": "prospect",
+    "news@drillrig-vendor.com": "vendor"
+  },
+  "byDomain": {
+    "alphaomega-example.com": "internal",
+    "aogeotech.com": "internal"
+  }
+}

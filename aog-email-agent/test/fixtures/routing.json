@@ -1,0 +1,161 @@
+{
+  "$comment": "Suite 1. Transcribed from the spec, bodies verbatim. referenceDate is 2026-01-15 (a Thursday) across the whole seed set: the spec's expected dates (2/14, 2/03, ITB 26-118) only resolve to 2026 from a reference point earlier in that year, and EXT-05's 'upcoming Friday' needs a known weekday to resolve against. Grow this file with real captured mail; every production miss becomes a fixture here before the prompt gets touched.",
+  "referenceDate": "2026-01-15T09:00",
+  "cases": [
+    {
+      "id": "CLS-01",
+      "expect": "New Opportunity",
+      "email": {
+        "from": "purchasing@example-isd.org",
+        "subject": "ITB 26-118 Geotechnical Investigation, New Elementary",
+        "body": "Sealed bids due 2/14 at 2:00 PM. Plans and specs attached. Pre-bid 2/03.",
+        "receivedAt": "2026-01-15T09:00"
+      }
+    },
+    {
+      "id": "CLS-02",
+      "expect": "Opportunity Update",
+      "email": {
+        "from": "estimator@gc-example.com",
+        "subject": "Addendum 2, Riverside Detention",
+        "body": "Bid date moved to Friday. Revised boring locations attached. Same scope otherwise.",
+        "receivedAt": "2026-01-15T09:00"
+      }
+    },
+    {
+      "id": "CLS-03",
+      "expect": "Bid Outcome",
+      "email": {
+        "from": "contracts@city-example.gov",
+        "subject": "Notice of Award, Well Field Access Road",
+        "body": "AOG has been selected. Please return signed agreement by 3/01.",
+        "receivedAt": "2026-01-15T09:00"
+      }
+    },
+    {
+      "id": "CLS-04",
+      "expect": "Active Project",
+      "email": {
+        "from": "pm@gc-example.com",
+        "subject": "Boring schedule, Oakmont Logistics",
+        "body": "When can your crew mobilize? We need logs before the foundation submittal.",
+        "receivedAt": "2026-01-15T09:00"
+      }
+    },
+    {
+      "id": "CLS-05",
+      "expect": "Client & Network",
+      "email": {
+        "from": "principal@arch-example.com",
+        "subject": "Coffee + a name I want to pass you",
+        "body": "Good seeing you. I have a developer client you should meet, sending an intro next week.",
+        "receivedAt": "2026-01-15T09:00"
+      }
+    },
+    {
+      "id": "CLS-06",
+      "expect": "Internal / Team",
+      "email": {
+        "from": "garic@alphaomega-example.com",
+        "subject": "Field crew this week",
+        "body": "Two rigs booked Thu and Fri. Need lab turnaround confirmed before I commit.",
+        "receivedAt": "2026-01-15T09:00"
+      }
+    },
+    {
+      "id": "CLS-07",
+      "expect": "Compliance & Docs",
+      "email": {
+        "from": "subcontracts@gc-example.com",
+        "subject": "COI and W-9 needed, Parkside job",
+        "body": "Please send a certificate of insurance naming us additional insured, plus your W-9.",
+        "receivedAt": "2026-01-15T09:00"
+      }
+    },
+    {
+      "id": "CLS-08",
+      "expect": "Low Priority / Noise",
+      "email": {
+        "from": "news@drillrig-vendor.com",
+        "subject": "Spring sale on augers and split spoons",
+        "body": "15% off sampling gear through April. Shop now.",
+        "receivedAt": "2026-01-15T09:00"
+      }
+    },
+    {
+      "id": "CLS-09",
+      "expect": "Low Priority / Noise",
+      "email": {
+        "from": "news@arch-example.com",
+        "subject": "Our Q1 firm newsletter",
+        "body": "Project highlights, new hires, and a photo gallery from the holiday party.",
+        "receivedAt": "2026-01-15T09:00"
+      }
+    },
+    {
+      "id": "CLS-10",
+      "expect": "Opportunity Update",
+      "email": {
+        "from": "purchasing@example-isd.org",
+        "subject": "Addendum 3, ITB 26-118 New Elementary",
+        "body": "New geotech scope added: two deeper borings. Read like a fresh request but ties to bid 26-118.",
+        "receivedAt": "2026-01-15T09:00"
+      }
+    },
+    {
+      "id": "CLS-11",
+      "expect": "Bid Outcome",
+      "email": {
+        "from": "purchasing@city-example.gov",
+        "subject": "Bid tabulation, Wastewater Expansion",
+        "body": "Attached tab sheet lists all bidders and pricing. For your records.",
+        "receivedAt": "2026-01-15T09:00"
+      }
+    },
+    {
+      "id": "CLS-12",
+      "expect": "Client & Network",
+      "email": {
+        "from": "developer@example-dev.com",
+        "subject": "Just checking in",
+        "body": "No live job right now. Wanted to stay in touch and see how the year is starting.",
+        "receivedAt": "2026-01-15T09:00"
+      }
+    },
+    {
+      "id": "CLS-13",
+      "expect": "New Opportunity",
+      "email": {
+        "subject": "Meadow Ridge subdivision, geotech RFP",
+        "receivedAt": "2026-01-15T09:00",
+        "messages": [
+          {
+            "from": "civil@example-eng.com",
+            "receivedAt": "2026-01-12T10:00",
+            "body": "RFP attached, geotech for Meadow Ridge subdivision, responses due 3/10."
+          },
+          {
+            "from": "alex@alphaomega-example.com",
+            "receivedAt": "2026-01-13T08:30",
+            "body": "Thanks, reviewing."
+          },
+          {
+            "from": "civil@example-eng.com",
+            "receivedAt": "2026-01-15T09:00",
+            "body": "Sounds good, talk soon."
+          }
+        ]
+      }
+    },
+    {
+      "id": "CLS-14",
+      "expect": "Unclassified",
+      "email": {
+        "from": "unknown@example.com",
+        "subject": "",
+        "body": "Call me when you get a chance.",
+        "receivedAt": "2026-01-15T09:00"
+      }
+    }
+  ]
+}

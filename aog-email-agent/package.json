@@ -1,0 +1,17 @@
+{
+  "name": "aog-email-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AOG inbound email agent: routing, extraction, priority tier, drafts, and the scheduled jobs, with the test spec wired up as a runnable suite.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node bin/build-workflows.mjs",
+    "test": "node --test \"test/**/*.test.js\"",
+    "eval": "node bin/aog-eval.mjs",
+    "eval:routing": "node bin/aog-eval.mjs --suite routing",
+    "eval:extraction": "node bin/aog-eval.mjs --suite extraction"
+  }
+}

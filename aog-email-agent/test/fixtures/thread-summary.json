@@ -1,0 +1,44 @@
+{
+  "$comment": "Suite 4. The spec describes these threads rather than quoting them ('8 messages negotiating boring count'), so the message bodies here are written to match the description exactly: Cedar Park settles on 6 borings at 25 ft in the final message, and the second thread reverses 4 to 8. Nothing else numeric appears in either thread, which is what makes 'Expect absent: any depth or count not in the thread' checkable.",
+  "cases": [
+    {
+      "id": "SUM-01",
+      "expect": {
+        "contains": ["6 borings", "25 ft", "Cedar Park"],
+        "absentNumbers": true,
+        "maxWords": 60
+      },
+      "thread": {
+        "subject": "Cedar Park geotech scope",
+        "messages": [
+          { "from": "pm@gc-example.com", "receivedAt": "2026-01-05T09:00", "body": "Starting scope on Cedar Park. What do you recommend for borings?" },
+          { "from": "alex@alphaomega-example.com", "receivedAt": "2026-01-05T11:00", "body": "Given the building footprint I'd start at 8 borings." },
+          { "from": "pm@gc-example.com", "receivedAt": "2026-01-06T08:30", "body": "8 is more than the budget carries. Can we do fewer?" },
+          { "from": "alex@alphaomega-example.com", "receivedAt": "2026-01-06T10:00", "body": "We could drop to 6 if we keep them deeper." },
+          { "from": "pm@gc-example.com", "receivedAt": "2026-01-07T09:15", "body": "Structural wants to see refusal or 25 ft, whichever comes first." },
+          { "from": "alex@alphaomega-example.com", "receivedAt": "2026-01-07T13:00", "body": "6 at 25 ft works for me. Confirm and I'll schedule." },
+          { "from": "pm@gc-example.com", "receivedAt": "2026-01-08T08:00", "body": "Checking with the owner today." },
+          { "from": "pm@gc-example.com", "receivedAt": "2026-01-08T16:20", "body": "Owner is good with it. Go with 6 borings at 25 ft on Cedar Park." }
+        ]
+      }
+    },
+    {
+      "id": "SUM-02",
+      "expect": {
+        "contains": ["8 borings"],
+        "absentAsCurrentPlan": ["4 borings"],
+        "maxWords": 60
+      },
+      "thread": {
+        "subject": "Hollow Creek scope",
+        "messages": [
+          { "from": "civil@example-eng.com", "receivedAt": "2026-01-09T09:00", "body": "For Hollow Creek let's plan on 4 borings." },
+          { "from": "alex@alphaomega-example.com", "receivedAt": "2026-01-09T10:30", "body": "Understood, 4 borings. I'll put it on the schedule." },
+          { "from": "civil@example-eng.com", "receivedAt": "2026-01-12T14:00", "body": "Scope revision came through, the pad grew east. Disregard the earlier count." },
+          { "from": "civil@example-eng.com", "receivedAt": "2026-01-12T14:05", "body": "Make it 8 borings on Hollow Creek." },
+          { "from": "alex@alphaomega-example.com", "receivedAt": "2026-01-12T15:00", "body": "Got it, 8 borings. Updating the schedule now." }
+        ]
+      }
+    }
+  ]
+}

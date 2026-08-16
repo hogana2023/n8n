@@ -1,0 +1,49 @@
+{
+  "$comment": "Suite 5. DRV-01 and DRV-02 pull their input from the routing fixtures. DRV-03 is written out because the spec only describes it ('client asks what's your price for the borings?'). Note that no dollar figure appears anywhere in the DRV-03 thread, which is the point: the lint's fabricated_price rule only fires on a figure the source does not contain, so a draft can quote a price back at someone who named one and still pass.",
+  "cases": [
+    {
+      "id": "DRV-01",
+      "inputFrom": "CLS-01",
+      "category": "New Opportunity",
+      "expect": { "drafted": true, "lintPass": true }
+    },
+    {
+      "id": "DRV-02",
+      "inputFrom": "CLS-08",
+      "category": "Low Priority / Noise",
+      "extractedOverride": { "response_needed": false },
+      "expect": { "drafted": false }
+    },
+    {
+      "id": "DRV-03",
+      "category": "Active Project",
+      "expect": {
+        "drafted": true,
+        "lintPass": true,
+        "absentPatterns": ["\\$\\s?\\d", "\\bper foot\\b", "\\bper boring\\b"],
+        "defersPricing": true
+      },
+      "email": {
+        "subject": "Southgate borings",
+        "receivedAt": "2026-01-15T09:00",
+        "messages": [
+          {
+            "from": "pm@gc-example.com",
+            "receivedAt": "2026-01-14T15:00",
+            "body": "We're moving ahead on Southgate. Six borings, 30 ft each, access is open all week."
+          },
+          {
+            "from": "alex@alphaomega-example.com",
+            "receivedAt": "2026-01-14T16:10",
+            "body": "Good news. I'll get it on the schedule."
+          },
+          {
+            "from": "pm@gc-example.com",
+            "receivedAt": "2026-01-15T09:00",
+            "body": "Before I write the PO, what's your price for the borings?"
+          }
+        ]
+      }
+    }
+  ]
+}

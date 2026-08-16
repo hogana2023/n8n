@@ -1,0 +1,87 @@
+{
+  "type": "object",
+  "properties": {
+    "due_date": {
+      "type": ["string", "null"],
+      "description": "The single date AOG has to hit, as YYYY-MM-DDTHH:mm when a time is given, otherwise YYYY-MM-DD. Null when the message states no date. Never guess and never copy a date from a different message."
+    },
+    "primary_due_date": {
+      "type": ["string", "null"],
+      "description": "Same value as due_date. Present so downstream jobs can read one field name when a message carries several dates."
+    },
+    "other_dates": {
+      "type": "array",
+      "description": "Every other date in the message that is not the primary due date. Pre-bid meetings, site walks, question deadlines, award dates, mobilization dates. Empty array when there are none.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "What the date is, in the message's own words, lowercased. For example: pre-bid, site walk, questions due, award, mobilization."
+          },
+          "date": {
+            "type": "string",
+            "description": "YYYY-MM-DDTHH:mm when a time is given, otherwise YYYY-MM-DD."
+          }
+        },
+        "required": ["label", "date"]
+      }
+    },
+    "date_in_attachment": {
+      "type": "boolean",
+      "description": "True when the message defers its dates to an attachment or a link rather than stating them in the body. For example 'see attached RFQ for all dates'. False otherwise."
+    },
+    "project_name": {
+      "type": ["string", "null"],
+      "description": "The project as named in the message, without the bid number, without the word project, and without the scope of work. From 'ITB 26-118 Geotechnical Investigation, New Elementary' the project name is 'New Elementary'. Null when no project is named."
+    },
+    "client_name": {
+      "type": ["string", "null"],
+      "description": "The organization the work is for, written the way a person would say it out loud. Derive it from the signature, the letterhead or the sender domain. From purchasing@example-isd.org that is 'Example ISD'. Null when it cannot be determined from the message."
+    },
+    "bid_reference": {
+      "type": ["string", "null"],
+      "description": "The solicitation number as written, for example 'ITB 26-118' or 'RFP 2026-04'. Null when the message carries none. This is the key that ties addenda back to the original opportunity."
+    },
+    "project_stage": {
+      "type": ["string", "null"],
+      "description": "One of exactly: 'proposal requested', 'addendum', 'bid submitted', 'awarded', 'not awarded', 'active project', 'closeout', 'prequalification', 'none'. Use 'proposal requested' when AOG is being asked to bid or propose. Use 'active project' when the work is already underway. Null only when the message is not about a project at all."
+    },
+    "requested_items": {
+      "type": "array",
+      "description": "Concrete deliverables the sender is asking AOG to send back, one per entry, in the order requested, using the plain name of the item. Write out abbreviations: 'COI' becomes 'certificate of insurance', 'W-9' stays 'W-9'. A request to bid is the single item 'bid'. Empty array when nothing is being requested.",
+      "items": { "type": "string" }
+    },
+    "response_needed": {
+      "type": "boolean",
+      "description": "True when a person is waiting on something from AOG: an answer, a document, a price, a date, a decision, or a bid. False for bulk mail, newsletters, vendor promotions, automated notifications, and messages that are purely informational with no ask."
+    },
+    "intro_opportunity": {
+      "type": "boolean",
+      "description": "True when the sender offers to introduce, refer or connect AOG to someone new. False otherwise."
+    },
+    "intro_target": {
+      "type": ["string", "null"],
+      "description": "Who the introduction is to, described as the message describes them. Null when intro_opportunity is false."
+    },
+    "action_summary": {
+      "type": "string",
+      "description": "One sentence, under 25 words, saying what AOG has to do and by when. Use only facts present in the message."
+    }
+  },
+  "required": [
+    "due_date",
+    "primary_due_date",
+    "other_dates",
+    "date_in_attachment",
+    "project_name",
+    "client_name",
+    "bid_reference",
+    "project_stage",
+    "requested_items",
+    "response_needed",
+    "intro_opportunity",
+    "intro_target",
+    "action_summary"
+  ]
+}
