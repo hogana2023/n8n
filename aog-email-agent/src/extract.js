@@ -75,7 +75,7 @@ export async function extract(input, opts = {}) {
 		system,
 		user,
 		model: opts.model ?? settings.llm.extractorModel,
-		temperature: settings.llm.temperature,
+		effort: settings.llm.effort.extractor,
 		pass: opts.pass ?? 0,
 	});
 

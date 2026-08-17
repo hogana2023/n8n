@@ -185,9 +185,19 @@ describe('generated n8n workflows', () => {
 			assert.ok(!/liveWriter\s*:/.test(stager.parameters.jsCode), 'a live writer is attached');
 		});
 
-		it('both model sub-nodes run at temperature 0', () => {
-			for (const name of ['Classifier Model', 'Extractor Model']) {
-				assert.equal(byName.get(name).parameters.options.temperature, settings.llm.temperature);
+		it('no model sub-node sends a rejected sampling parameter', () => {
+			const models = wf.nodes.filter((n) => n.type.endsWith('.lmChatAnthropic'));
+			assert.equal(models.length, 3);
+
+			for (const model of models) {
+				const serialized = JSON.stringify(model.parameters);
+				for (const rejected of ['temperature', 'topP', 'topK', 'thinkingBudget']) {
+					assert.ok(!serialized.includes(rejected), `"${model.name}" sends ${rejected}`);
+				}
+				assert.ok(
+					['low', 'medium', 'high', 'xhigh', 'max'].includes(model.parameters.options.effort),
+					`"${model.name}" has no effort level`,
+				);
 			}
 		});
 

@@ -1,3 +1,6 @@
 node_modules
 test/.cassettes.json
 logs/
+.env
+.env.local
+*.local.json

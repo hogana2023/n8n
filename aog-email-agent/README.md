@@ -78,6 +78,24 @@ approval. Replies are created with `saveAsDraft`, so the workflow cannot send ma
 **Two lint failures and nobody gets a draft.** An empty drafts folder beats one Alex has to
 proofread for invented prices.
 
+**Effort replaces temperature.** The spec asks for low temperature on the classifier and
+extractor. Claude Sonnet 5 and Opus 5 reject `temperature`, `top_p` and `top_k` outright,
+so `output_config.effort` carries that job instead. Levels are per stage in
+`config/settings.json`.
+
+## A fix this needed in n8n itself
+
+The Anthropic sub-node in this fork could not drive any model the account can reach. It
+always sent `temperature`, and sent a fixed `budget_tokens` whenever thinking was enabled.
+Both are rejected with a 400 by Claude Sonnet 5, Opus 5, Fable 5, Opus 4.8 and Opus 4.7,
+which is every model on the account, so every request failed before this was fixed.
+
+`packages/@n8n/nodes-langchain/nodes/llms/LMChatAnthropic/LmChatAnthropic.node.ts` now
+detects those models, clears the sampling parameters, sends adaptive thinking, and exposes
+an **Effort** option in place of the thinking budget. Older models keep the previous
+behaviour exactly. The request-shape logic is a pure function with tests in
+`__tests__/LmChatAnthropic.node.test.ts`.
+
 ## Layout
 
 ```

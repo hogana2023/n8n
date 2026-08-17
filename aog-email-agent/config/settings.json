@@ -16,9 +16,15 @@
     "extractorModel": "claude-sonnet-5",
     "summaryModel": "claude-sonnet-5",
     "draftModel": "claude-opus-5",
-    "temperature": 0,
-    "maxTokens": 2048,
-    "$comment": "Temperature 0 on classifier and extractor per the spec's drift note. Draft generation is the one place a hair of variation is fine, but it runs at 0 too so the three-pass fixture check stays honest."
+    "maxTokens": 4096,
+    "effort": {
+      "classifier": "low",
+      "extractor": "medium",
+      "summary": "low",
+      "draft": "medium"
+    },
+    "$comment_effort": "The spec says to set temperature low so drift stays small. That lever no longer exists: Claude Sonnet 5 and Opus 5 reject temperature, top_p and top_k with a 400, and reject the old fixed thinking budget too. Effort replaces it. Lower effort means less exploration and more consolidated output, which is what the three-pass stability check actually wants, so the classifier runs at low. The extractor sits at medium because resolving dates off a reference date is the one place a little more care pays.",
+    "$comment_maxTokens": "Adaptive thinking spends from max_tokens, so this has headroom the old temperature-0 setup did not need."
   },
 
   "staleFollowUp": {

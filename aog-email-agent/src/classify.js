@@ -72,7 +72,7 @@ export async function classify(input, opts = {}) {
 		system,
 		user,
 		model: opts.model ?? settings.llm.classifierModel,
-		temperature: settings.llm.temperature,
+		effort: settings.llm.effort.classifier,
 		pass: opts.pass ?? 0,
 	});
 

@@ -5,22 +5,22 @@ was needed to make a test run, it sits in `config/` marked PLACEHOLDER and is li
 
 ## 1. Credentials
 
-**Rotate the two passwords in the env file.** They were sent in plain text in an RTF
-attachment: `dflessner@aogeotech.com` with a password that names a child's birthday, and
-`dave@mustartseedkc.vom` with another. Treat both as compromised and change them. Neither
-is in this repo, in the workflow JSON, or in any log, and `test/workflows.test.js` asserts
-they never get in.
+| What | Status |
+|---|---|
+| Mailbox (`microsoftOutlookOAuth2Api`) | **Received.** Entra app registration is in `.env.local` (gitignored). Finish the wiring with `docs/outlook-setup.md`. |
+| Model (`anthropicApi`) | **Received but unusable.** The key authenticates and can list models. Every inference call returns `400: Your credit balance is too low to access the Anthropic API`. Nothing can be measured until the account has credit. |
+| Pipedrive (`pipedriveApi`) | Still needed, and only once the approval gate is cleared for live writes. |
 
-Beyond that, they are the wrong kind of credential. n8n does not log in as a person. It
-needs:
+**Rotate three secrets when convenient.** All were pasted in plain text and now live in a
+chat transcript: the Entra client secret, the Anthropic API key, and the two account
+passwords from the original env attachment (`dflessner@aogeotech.com`,
+`dave@mustartseedkc.vom`). None of them are in this repo, in the workflow JSON, or in any
+log, and `test/workflows.test.js` asserts credential-shaped strings never get in.
 
-| What | Node needs | What to send |
-|---|---|---|
-| Mailbox | `microsoftOutlookOAuth2Api` | An Entra ID app registration: tenant ID, client ID, client secret, and the redirect URI pointed at your n8n instance. Delegated Graph scopes `Mail.ReadWrite`, `Mail.Send`, `MailboxSettings.Read`, `offline_access`. |
-| Pipedrive | `pipedriveApi` | An API token from Personal preferences, not an account login. Only needed once the approval gate is cleared for live writes. |
-| Model | `anthropicApi` | An Anthropic API key. |
+The two account passwords were also the wrong kind of credential to begin with. n8n never
+logs in as a person, which is why the app registration was the thing that unblocked this.
 
-Two things I need you to confirm rather than assume:
+Two things I still need you to confirm rather than assume:
 
 - **Which mailbox is this agent running on?** The env file gives `dflessner@aogeotech.com`,
   the spec is written around a person called Alex, and `integrations@aoegeotech.com` appears
@@ -87,7 +87,24 @@ need to know which system is the system of record for a project (Pipedrive deal?
 SharePoint list? the R: drive?), what identifies a project there, and **who signs off**.
 Approval currently requires a named approver and is otherwise a hard stop.
 
-## 8. Scale
+## 8. Model settings, now that temperature is gone
+
+The spec says to set temperature low on the classifier and extractor so drift stays small.
+That lever no longer exists. Claude Sonnet 5 and Opus 5 reject `temperature`, `top_p` and
+`top_k` with a 400, and reject the old fixed thinking budget too. Depth is set by `effort`
+instead.
+
+I picked `low` for the classifier, `medium` for the extractor, `low` for summaries and
+`medium` for drafting. Lower effort means less exploration and more consolidated output,
+which is what the three-pass stability check actually wants, and the extractor gets the
+extra step because resolving dates against a reference date is the fiddliest part. These
+are starting points, not measurements. The first thing worth doing once the account has
+credit is an effort sweep on the routing suite.
+
+This also broke the n8n Anthropic sub-node, which is fixed in the same commit. See the
+build notes in the README.
+
+## 9. Scale
 
 Roughly how much mail lands in this box per day? It changes whether the extractor should run
 on every message or only on the bins where its output is used, which is most of the model

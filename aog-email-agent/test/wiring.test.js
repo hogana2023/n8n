@@ -104,8 +104,31 @@ describe('wiring and red lines', () => {
 		assert.equal(settings.drafts.saveAsDraftOnly, true);
 	});
 
-	it('the classifier and extractor run at temperature 0', () => {
-		assert.equal(settings.llm.temperature, 0);
+	it('no sampling parameter is configured anywhere', () => {
+		// Claude Sonnet 5 and Opus 5 reject temperature, top_p and top_k with a 400, so a
+		// stray one is a broken pipeline rather than a tuning mistake. Checked on keys, not
+		// on the serialized blob, because the $comment fields discuss these by name.
+		const rejected = new Set(['temperature', 'topP', 'top_p', 'topK', 'top_k']);
+
+		const walk = (value, path) => {
+			if (!value || typeof value !== 'object') return;
+			for (const [key, child] of Object.entries(value)) {
+				if (key.startsWith('$comment')) continue;
+				assert.ok(!rejected.has(key), `settings still carries ${path}${key}`);
+				walk(child, `${path}${key}.`);
+			}
+		};
+
+		walk(settings, '');
+	});
+
+	it('every model call site has an effort level', () => {
+		for (const stage of ['classifier', 'extractor', 'summary', 'draft']) {
+			assert.ok(
+				['low', 'medium', 'high', 'xhigh', 'max'].includes(settings.llm.effort[stage]),
+				`${stage} has no valid effort`,
+			);
+		}
 	});
 
 	it('the draft prompt bans prices and em dashes out loud', () => {

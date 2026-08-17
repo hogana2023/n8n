@@ -16,7 +16,7 @@ export async function summarizeThread(thread, opts = {}) {
 		system: prompts.summary,
 		user: renderThread(thread),
 		model: opts.model ?? settings.llm.summaryModel,
-		temperature: settings.llm.temperature,
+		effort: settings.llm.effort.summary,
 		maxTokens: 512,
 		pass: opts.pass ?? 0,
 	});

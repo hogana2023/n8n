@@ -49,12 +49,28 @@ export class MissingApiKeyError extends Error {
 	}
 }
 
+/** The account cannot make calls at all: no credit, or a rejected key. */
+export class AccountError extends Error {
+	constructor(message) {
+		super(message);
+		this.name = 'AccountError';
+	}
+}
+
+export class RefusalError extends Error {
+	constructor(details) {
+		super(`model declined the request: ${details?.category ?? 'no category given'}`);
+		this.name = 'RefusalError';
+		this.details = details ?? null;
+	}
+}
+
 /**
  * @param {object} args
  * @param {string} args.system
  * @param {string} args.user
  * @param {string} [args.model]
- * @param {number} [args.temperature]
+ * @param {'low'|'medium'|'high'|'xhigh'|'max'} [args.effort]
  * @param {number} [args.maxTokens]
  * @param {number} [args.pass] which of the three fixture passes this is, so the cache keeps them apart
  * @returns {Promise<string>} the assistant text
@@ -63,14 +79,18 @@ export async function callModel({
 	system,
 	user,
 	model = settings.llm.classifierModel,
-	temperature = settings.llm.temperature,
+	effort = settings.llm.effort.classifier,
 	maxTokens = settings.llm.maxTokens,
 	pass = 0,
 }) {
+	// No temperature, top_p or top_k. Every model this pipeline targets rejects them with
+	// a 400. Depth is controlled by effort instead, and thinking is on by default on these
+	// models whether or not it is asked for, so max_tokens has to cover it.
 	const payload = {
 		model,
 		max_tokens: maxTokens,
-		temperature,
+		thinking: { type: 'adaptive' },
+		output_config: { effort },
 		system,
 		messages: [{ role: 'user', content: user }],
 	};
@@ -96,15 +116,41 @@ export async function callModel({
 	});
 
 	if (!response.ok) {
-		throw new Error(`anthropic ${response.status}: ${await response.text()}`);
+		const detail = await response.text();
+
+		// Billing and auth failures are conditions to report, not defects to debug. They
+		// look identical to a broken request in a stack trace, so they get their own type.
+		if (/credit balance is too low/i.test(detail)) {
+			throw new AccountError(
+				'the Anthropic account has no credit. The key is valid, but every inference call is rejected until the account is topped up.',
+			);
+		}
+		if (response.status === 401) {
+			throw new AccountError('the Anthropic key was rejected. Check ANTHROPIC_API_KEY.');
+		}
+
+		throw new Error(`anthropic ${response.status}: ${detail}`);
 	}
 
 	const body = await response.json();
+
+	// A decline is a 200 with an empty or partial content array, so this has to be checked
+	// before reading content or the caller gets an unhelpful undefined.
+	if (body.stop_reason === 'refusal') {
+		throw new RefusalError(body.stop_details);
+	}
+
 	const text = (body.content ?? [])
 		.filter((block) => block.type === 'text')
 		.map((block) => block.text)
 		.join('')
 		.trim();
+
+	if (body.stop_reason === 'max_tokens' && !text) {
+		throw new Error(
+			`model hit max_tokens (${maxTokens}) before writing any text. Adaptive thinking spends from the same budget, so raise llm.maxTokens or lower effort.`,
+		);
+	}
 
 	if (useCache()) {
 		loadCassettes()[key] = text;

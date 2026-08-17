@@ -77,12 +77,17 @@ function connect(connections, from, to, outputIndex = 0, type = 'main', inputInd
 	connections[from][type][outputIndex].push({ node: to, type, index: inputIndex });
 }
 
-const anthropic = (name, model, position) =>
+// `effort` replaces temperature on every model this pipeline targets, and the sub-node
+// clears the sampling parameters for them. See the LmChatAnthropic patch.
+const anthropic = (name, model, effort, position) =>
 	node(
 		name,
 		'@n8n/n8n-nodes-langchain.lmChatAnthropic',
 		1.3,
-		{ model, options: { temperature: settings.llm.temperature, maxTokensToSample: settings.llm.maxTokens } },
+		{
+			model: { __rl: true, mode: 'id', value: model },
+			options: { effort, maxTokensToSample: settings.llm.maxTokens },
+		},
 		position,
 		{ credentials: { anthropicApi: { id: 'REPLACE_ME', name: 'Anthropic account' } } },
 	);
@@ -224,7 +229,7 @@ return $input.all().map((item) => ({
 		),
 	);
 
-	nodes.push(anthropic('Classifier Model', settings.llm.classifierModel, [220, 540]));
+	nodes.push(anthropic('Classifier Model', settings.llm.classifierModel, settings.llm.effort.classifier, [220, 540]));
 	connect(connections, 'Classifier Model', 'Text Classifier', 0, 'ai_languageModel');
 
 	connect(connections, 'Inbox Trigger', 'Normalize Message');
@@ -294,7 +299,7 @@ return $input.all().map((item) => ({
 			[1180, 300],
 		),
 	);
-	nodes.push(anthropic('Extractor Model', settings.llm.extractorModel, [1180, 540]));
+	nodes.push(anthropic('Extractor Model', settings.llm.extractorModel, settings.llm.effort.extractor, [1180, 540]));
 	connect(connections, 'Extractor Model', 'Information Extractor', 0, 'ai_languageModel');
 	connect(connections, 'Move To Folder', 'Information Extractor');
 
@@ -380,7 +385,7 @@ return $input.all().map((item, index) => {
 			[1860, 200],
 		),
 	);
-	nodes.push(anthropic('Draft Model', settings.llm.draftModel, [1860, 440]));
+	nodes.push(anthropic('Draft Model', settings.llm.draftModel, settings.llm.effort.draft, [1860, 440]));
 	connect(connections, 'Draft Model', 'Write Draft', 0, 'ai_languageModel');
 	connect(connections, 'Needs A Reply?', 'Write Draft', 0);
 

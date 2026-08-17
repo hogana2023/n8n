@@ -9,7 +9,7 @@ import { extract } from '../src/extract.js';
 import { generateDraft } from '../src/draft.js';
 import { summarizeThread, checkSummary } from '../src/summarize.js';
 import { lintDraft } from '../src/draftLint.js';
-import { MissingApiKeyError } from '../src/llm.js';
+import { AccountError, MissingApiKeyError } from '../src/llm.js';
 import { matches } from '../src/matchers.js';
 
 /**
@@ -355,7 +355,9 @@ export async function main() {
 	const names = ONLY ? [ONLY] : Object.keys(SUITES);
 
 	console.log(`AOG email agent eval`);
-	console.log(`model: ${settings.llm.classifierModel}  temperature: ${settings.llm.temperature}  passes: ${PASSES}`);
+	console.log(
+		`model: ${settings.llm.classifierModel}  effort: ${settings.llm.effort.classifier}  passes: ${PASSES}`,
+	);
 
 	let allPassed = true;
 
@@ -388,6 +390,11 @@ const invokedDirectly =
 
 if (invokedDirectly) {
 	main().catch((error) => {
+		if (error instanceof AccountError) {
+			console.error(`\nCannot run: ${error.message}`);
+			process.exitCode = 4;
+			return;
+		}
 		if (error instanceof MissingApiKeyError) {
 			console.error(`\n${error.message}`);
 			process.exitCode = 3;

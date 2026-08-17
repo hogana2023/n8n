@@ -87,7 +87,7 @@ export async function generateDraft({ input, category, extracted }, opts = {}) {
 			system,
 			user: buildUserPrompt(input, extracted, violations),
 			model: opts.model ?? settings.llm.draftModel,
-			temperature: settings.llm.temperature,
+			effort: settings.llm.effort.draft,
 			pass: (opts.pass ?? 0) * 10 + attempt,
 		});
 
