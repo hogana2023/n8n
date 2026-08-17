@@ -72,6 +72,85 @@ const modelField: INodeProperties = {
 
 const MIN_THINKING_BUDGET = 1024;
 const DEFAULT_MAX_TOKENS = 4096;
+
+/**
+ * Models that reject `temperature`, `top_p`, `top_k` and the fixed thinking budget with a
+ * 400. On these, thinking depth is controlled by `output_config.effort` instead of
+ * `budget_tokens`, and sampling parameters have to be left off the request entirely.
+ *
+ * Sending the old shape to any of them fails every request, so this is matched on the
+ * model name rather than left to the user to get right.
+ */
+const ADAPTIVE_THINKING_MODEL = /^claude-(?:fable-5|mythos-5|opus-5|sonnet-5|opus-4-[78])\b/;
+
+const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+
+export type AnthropicEffort = (typeof EFFORT_LEVELS)[number];
+
+export type AnthropicModelOptions = {
+	maxTokensToSample?: number;
+	temperature?: number;
+	topK?: number;
+	topP?: number;
+	thinking?: boolean;
+	thinkingBudget?: number;
+	effort?: AnthropicEffort;
+};
+
+export function usesAdaptiveThinking(modelName: string): boolean {
+	return ADAPTIVE_THINKING_MODEL.test(modelName);
+}
+
+/**
+ * Builds the per-request overrides handed to LangChain as `invocationKwargs`.
+ *
+ * Two shapes, picked by model:
+ *
+ *   adaptive  thinking is on, depth comes from `output_config.effort`, and every sampling
+ *             parameter is cleared. Sending `temperature`, `top_p`, `top_k` or a fixed
+ *             `budget_tokens` to these models fails the request with a 400, so this is not
+ *             a tuning choice, it is the only shape that works.
+ *   budgeted  the older `{type: 'enabled', budget_tokens}` form, unchanged.
+ *
+ * Clearing a field to `undefined` here is what removes it: the model constructor still
+ * receives the node's defaults, and these overrides win.
+ */
+export function buildInvocationKwargs(
+	modelName: string,
+	options: AnthropicModelOptions,
+): Record<string, unknown> {
+	if (usesAdaptiveThinking(modelName)) {
+		return {
+			thinking: { type: 'adaptive' },
+			output_config: { effort: options.effort ?? 'high' },
+			max_tokens: options.maxTokensToSample ?? DEFAULT_MAX_TOKENS,
+			top_k: undefined,
+			top_p: undefined,
+			temperature: undefined,
+		};
+	}
+
+	if (options.thinking) {
+		return {
+			thinking: {
+				type: 'enabled',
+				// If thinking is enabled, we need to set a budget.
+				// We fallback to 1024 as that is the minimum
+				budget_tokens: options.thinkingBudget ?? MIN_THINKING_BUDGET,
+			},
+			// The default Langchain max_tokens is -1 (no limit) but Anthropic requires a number
+			// higher than budget_tokens
+			max_tokens: options.maxTokensToSample ?? DEFAULT_MAX_TOKENS,
+			// These need to be unset when thinking is enabled.
+			top_k: undefined,
+			top_p: undefined,
+			temperature: undefined,
+		};
+	}
+
+	return {};
+}
+
 export class LmChatAnthropic implements INodeType {
 	methods = {
 		listSearch: {
@@ -260,6 +339,18 @@ export class LmChatAnthropic implements INodeType {
 							},
 						},
 					},
+					{
+						displayName: 'Effort',
+						name: 'effort',
+						type: 'options',
+						default: 'high',
+						description:
+							'How much thinking and token spend to allow. Only applies to models that use adaptive thinking, where it replaces the thinking budget. Ignored on older models.',
+						options: EFFORT_LEVELS.map((level) => ({
+							name: level.charAt(0).toUpperCase() + level.slice(1),
+							value: level,
+						})),
+					},
 				],
 			},
 		],
@@ -274,15 +365,9 @@ export class LmChatAnthropic implements INodeType {
 				? (this.getNodeParameter('model.value', itemIndex) as string)
 				: (this.getNodeParameter('model', itemIndex) as string);
 
-		const options = this.getNodeParameter('options', itemIndex, {}) as {
-			maxTokensToSample?: number;
-			temperature: number;
-			topK?: number;
-			topP?: number;
-			thinking?: boolean;
-			thinkingBudget?: number;
-		};
-		let invocationKwargs = {};
+		const options = this.getNodeParameter('options', itemIndex, {}) as AnthropicModelOptions;
+		const adaptive = usesAdaptiveThinking(modelName);
+		const invocationKwargs = buildInvocationKwargs(modelName, options);
 
 		const tokensUsageParser = (llmOutput: LLMResult['llmOutput']) => {
 			const usage = (llmOutput?.usage as { input_tokens: number; output_tokens: number }) ?? {
@@ -296,33 +381,13 @@ export class LmChatAnthropic implements INodeType {
 			};
 		};
 
-		if (options.thinking) {
-			invocationKwargs = {
-				thinking: {
-					type: 'enabled',
-					// If thinking is enabled, we need to set a budget.
-					// We fallback to 1024 as that is the minimum
-					budget_tokens: options.thinkingBudget ?? MIN_THINKING_BUDGET,
-				},
-				// The default Langchain max_tokens is -1 (no limit) but Anthropic requires a number
-				// higher than budget_tokens
-				max_tokens: options.maxTokensToSample ?? DEFAULT_MAX_TOKENS,
-				// These need to be unset when thinking is enabled.
-				// Because the invocationKwargs will override the model options
-				// we can pass options to the model and then override them here
-				top_k: undefined,
-				top_p: undefined,
-				temperature: undefined,
-			};
-		}
-
 		const model = new ChatAnthropic({
 			anthropicApiKey: credentials.apiKey as string,
 			modelName,
 			maxTokens: options.maxTokensToSample,
-			temperature: options.temperature,
-			topK: options.topK,
-			topP: options.topP,
+			...(adaptive
+				? {}
+				: { temperature: options.temperature, topK: options.topK, topP: options.topP }),
 			callbacks: [new N8nLlmTracing(this, { tokensUsageParser })],
 			onFailedAttempt: makeN8nLlmFailedAttemptHandler(this),
 			invocationKwargs,
